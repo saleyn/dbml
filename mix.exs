@@ -14,7 +14,7 @@ defmodule DBML.MixProject do
 
   defp deps() do
     [
-      {:nimble_parsec, "~> 0.6"}
+      {:nimble_parsec, "~> 1.4"}
     ]
   end
 end
