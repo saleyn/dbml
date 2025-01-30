@@ -8,7 +8,12 @@ defmodule DBML.MixProject do
       elixir: "~> 1.15",
       description: "Database Markup Language (DBML) Parser",
       deps: deps(),
-      package: package()
+      package: package(),
+      docs: [
+        # The main page in the docs
+        main: "readme",
+        extras: ["README.md"]
+      ]
     ]
   end
 
@@ -16,7 +21,8 @@ defmodule DBML.MixProject do
 
   defp deps() do
     [
-      {:nimble_parsec, "~> 1.4"}
+      {:nimble_parsec, "~> 1.4"},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
 

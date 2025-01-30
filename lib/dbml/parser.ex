@@ -1,24 +1,10 @@
 defmodule DBML.Parser do
+  @moduledoc false
   import NimbleParsec
 
   @space_characters [?\s]
   @newline_characters [?\n]
   @whitespace_characters @space_characters ++ @newline_characters
-
-  # @spec capcase_string(binary) :: t
-  # @spec capcase_string(t, binary) :: t
-  def capcase_string(combinator \\ empty(), binary) do
-    #    when is_combinator(combinator) and is_binary(binary)
-
-    capcase_string2(combinator, binary)
-  end
-
-  defp capcase_string2(comb, <<c, _::binary>> = s) when c in ?a..?z, do: string(comb, s)
-
-  defp capcase_string2(comb, <<c, s::binary>>) when c in ?A..?Z,
-    do: string(comb, <<c - 32, s::binary>>)
-
-  defp capcase_string2(comb, s), do: string(comb, s)
 
   # Misc.
   required_spaces = ignore(ascii_string(@space_characters, min: 1))

@@ -1,4 +1,6 @@
 defmodule DBML.Utils do
+  @moduledoc false
+  
   def to_number([whole]) when is_integer(whole), do: whole
   def to_number(["-", whole]) when is_integer(whole), do: -whole
 
