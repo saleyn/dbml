@@ -5,6 +5,21 @@ defmodule DBML.Parser do
   @newline_characters [?\n]
   @whitespace_characters @space_characters ++ @newline_characters
 
+  # @spec capcase_string(binary) :: t
+  # @spec capcase_string(t, binary) :: t
+  def capcase_string(combinator \\ empty(), binary) do
+    #    when is_combinator(combinator) and is_binary(binary)
+
+    capcase_string2(combinator, binary)
+  end
+
+  defp capcase_string2(comb, <<c, _::binary>> = s) when c in ?a..?z, do: string(comb, s)
+
+  defp capcase_string2(comb, <<c, s::binary>>) when c in ?A..?Z,
+    do: string(comb, <<c - 32, s::binary>>)
+
+  defp capcase_string2(comb, s), do: string(comb, s)
+
   # Misc.
   required_spaces = ignore(ascii_string(@space_characters, min: 1))
   optional_spaces = ignore(ascii_string(@space_characters, min: 0))
@@ -61,7 +76,7 @@ defmodule DBML.Parser do
 
   identifier =
     choice([
-      double_quoted_string,
+      quoted_string,
       ascii_string([?0..?9, ?A..?Z, ?a..?z, ?_], min: 1)
     ])
 
@@ -106,7 +121,7 @@ defmodule DBML.Parser do
 
   column_type =
     choice([
-      double_quoted_string,
+      quoted_string,
       ascii_string([not: ?\s, not: ?\n, not: ?{, not: ?}], min: 1)
     ])
 
@@ -135,8 +150,13 @@ defmodule DBML.Parser do
 
   column_setting =
     choice([
-      ignore(string("default:")) |> repeat(misc) |> concat(default_choices) |> unwrap_and_tag(:default),
-      choice([string("pk"), string("primary")]) |> replace(true) |> unwrap_and_tag(:primary),
+      ignore(string("default:"))
+      |> repeat(misc)
+      |> concat(default_choices)
+      |> unwrap_and_tag(:default),
+      choice([string("pk"), string("primary key"), string("primary")])
+      |> replace(true)
+      |> unwrap_and_tag(:primary),
       ignore(string("increment")) |> replace(true) |> unwrap_and_tag(:autoincrement),
       ignore(string("unique")) |> replace(true) |> unwrap_and_tag(:unique),
       ignore(string("null")) |> replace(true) |> unwrap_and_tag(:null),
@@ -169,17 +189,32 @@ defmodule DBML.Parser do
       |> unwrap_and_tag(column_settings, :settings)
     )
 
+  index_setting =
+    choice([
+      misc,
+      string("pk") |> replace(true) |> unwrap_and_tag(:primary),
+      string("unique") |> replace(true) |> unwrap_and_tag(:unique),
+      ignore(string("type:"))
+      |> repeat(misc)
+      |> choice([string("hash"), string("btree")])
+      |> unwrap_and_tag(:type),
+      ignore(string("name:")) |> repeat(misc) |> concat(identifier) |> unwrap_and_tag(:name)
+    ])
+
   index_settings =
     lookahead(string("["))
     |> ignore(string("["))
-    |> repeat(
-      choice([
-        misc,
-        string("pk") |> replace(true) |> unwrap_and_tag(:primary),
-        string("unique") |> replace(true) |> unwrap_and_tag(:unique),
-        ignore(string("type:")) |> repeat(misc) |> choice([string("hash"), string("btree")]) |> unwrap_and_tag(:type),
-        ignore(string("name:")) |> repeat(misc) |> concat(identifier) |> unwrap_and_tag(:name)
-      ])
+    |> concat(index_setting)
+    |> optional(
+      repeat(
+        choice([
+          misc,
+          lookahead(string(","))
+          |> ignore(string(","))
+          |> repeat(misc)
+          |> concat(index_setting)
+        ])
+      )
     )
     |> ignore(string("]"))
 
@@ -216,9 +251,7 @@ defmodule DBML.Parser do
     |> ignore(string("indexes"))
     |> repeat(misc)
     |> ignore(string("{"))
-    |> repeat(
-      choice([misc, index_definition])
-    )
+    |> repeat(choice([misc, index_definition]))
     |> ignore(string("}"))
     |> wrap()
 
@@ -240,8 +273,8 @@ defmodule DBML.Parser do
     |> ignore(string("}"))
 
   table =
-    lookahead(string("table"))
-    |> ignore(string("table"))
+    lookahead(choice([string("table"), string("Table")]))
+    |> ignore(choice([string("table"), string("Table")]))
     |> ignore(required_spaces)
     |> unwrap_and_tag(identifier, :name)
     |> optional(
@@ -256,8 +289,8 @@ defmodule DBML.Parser do
 
   # Table groups.
   table_group =
-    lookahead(string("tablegroup"))
-    |> ignore(string("tablegroup"))
+    lookahead(choice([string("tablegroup"), string("Tablegroup")]))
+    |> ignore(choice([string("tablegroup"), string("Tablegroup")]))
     |> repeat(misc)
     |> ignore(string("{"))
     |> repeat(choice([misc, identifier]))
@@ -313,8 +346,8 @@ defmodule DBML.Parser do
     |> ignore(string("}"))
 
   ref =
-    lookahead(string("ref"))
-    |> ignore(string("ref"))
+    lookahead(choice([string("ref"), string("Ref")]))
+    |> ignore(choice([string("ref"), string("Ref")]))
     |> optional(
       ignore(required_spaces)
       |> tag(identifier, :name)

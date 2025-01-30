@@ -5,7 +5,7 @@ defmodule DBML do
         {:ok, tokens}
 
       other ->
-        IO.inspect other
+        IO.inspect(other)
         :error
     end
   end
