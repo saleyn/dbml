@@ -1,0 +1,20 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+
+Table property {
+  property_id integer [pk]
+  name varchar [not null]
+  company varchar
+  address varchar
+  city varchar
+  state varchar
+  zip varchar
+  country varchar
+  url varchar
+  created_at timestamp [not null]
+  updated_at timestamp
+
+  indexes {
+    name [unique, name: "idx_property_name"]
+  }
+}
