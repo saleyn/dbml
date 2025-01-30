@@ -1,6 +1,10 @@
 # DBML
 
-**TODO: Add description**
+A parser implementation for the Database Markup Language (DBML) syntax.
+
+DBML documentation:
+  * [DBML Syntax](https://dbml.dbdiagram.io/docs)
+  * [DBML Visualization](https://dbml.dbdiagram.io/home) 
 
 ## Installation
 
@@ -10,9 +14,15 @@ by adding `dbml` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:dbml, "~> 0.1.0"}
+    {:dbml, "~> 0.2"}
   ]
 end
+```
+
+## Usage
+
+```elixir
+{:ok, dbml} = DBML.parse_file(filename)
 ```
 
 Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)

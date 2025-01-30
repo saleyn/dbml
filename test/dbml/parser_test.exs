@@ -1,10 +1,11 @@
 defmodule DBML.ParserTest do
   use ExUnit.Case, async: true
+  doctest DBML
 
   describe "parse/1" do
-    test "parses project" do
+    test "parse string" do
       assert {:ok, tokens} =
-               parse("""
+               DBML.parse("""
                project CMS {
                  database_type: "PostgreSQL"
                  note: 'CMS database'
@@ -129,7 +130,7 @@ defmodule DBML.ParserTest do
                   ]
                 ]
               ]} ==
-               parse("""
+               DBML.parse("""
                // Use DBML to define your database structure
                // Docs: https://dbml.dbdiagram.io/docs
 
@@ -145,9 +146,10 @@ defmodule DBML.ParserTest do
                }
                """)
     end
-  end
 
-  defp parse(doc) do
-    DBML.parse(doc)
+    test "parse file" do
+      assert {:ok, dbml} = DBML.parse_file("test/dbml/test1.dbml")
+      assert dbml != ""
+    end
   end
 end
