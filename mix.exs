@@ -6,6 +6,7 @@ defmodule DBML.MixProject do
       app: :dbml,
       version: "0.2.0",
       elixir: "~> 1.15",
+      description: "Database Markup Language (DBML) Parser",
       deps: deps(),
       package: package()
     ]
