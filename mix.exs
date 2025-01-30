@@ -28,7 +28,7 @@ defmodule DBML.MixProject do
 
   defp package() do
     [
-      licenses: ["Apache 2.0"],
+      licenses: ["Apache-2.0"],
       links: %{"GitHub" => "https://github.com/saleyn/dbml-ex"},
       files: ~w(lib test mix.* Makefile README.md)
     ]
