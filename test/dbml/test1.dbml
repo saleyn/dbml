@@ -2,14 +2,9 @@
 // Docs: https://dbml.dbdiagram.io/docs
 
 Table property {
+  unit_id integer [primary key, ref: > unit.unit_id]
   property_id integer [pk]
   name varchar [not null]
-  company varchar
-  address varchar
-  city varchar
-  state varchar
-  zip varchar
-  country varchar
   url varchar
   created_at timestamp [not null]
   updated_at timestamp
@@ -17,4 +12,9 @@ Table property {
   indexes {
     name [unique, name: "idx_property_name"]
   }
+
+  note: '''
+    Defines a unit of measure,
+    which is a multi-line string
+  '''
 }

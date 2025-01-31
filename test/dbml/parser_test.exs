@@ -114,42 +114,36 @@ defmodule DBML.ParserTest do
       assert 4 == get_in(tokens, [:table, :definitions]) |> length()
     end
 
-    test "DBML schema" do
+    test "parse file" do
       assert {:ok,
-              [
-                table: [
-                  name: "property",
-                  definitions: [
-                    column: [name: "property_id", type: "integer", settings: [primary: true]],
-                    column: [name: "name", type: "varchar", settings: [null: false]],
-                    column: [name: "created_at", type: "timestamp", settings: [null: false]],
-                    column: [name: "updated_at", type: "timestamp"],
-                    indexes: [
-                      [columns: ["name"], options: [unique: true, name: "idx_property_name"]]
+          [
+            table: [
+              name: "property",
+              definitions: [
+                column: [
+                  name: "unit_id",
+                  type: "integer",
+                  settings: [
+                    primary: true,
+                    reference: [
+                      type: :many_to_one,
+                      related: [table: "unit", column: "unit_id"]
                     ]
                   ]
-                ]
-              ]} ==
-               DBML.parse("""
-               // Use DBML to define your database structure
-               // Docs: https://dbml.dbdiagram.io/docs
-
-               Table property {
-                 property_id integer [pk]
-                 name varchar [not null]
-                 created_at timestamp [not null]
-                 updated_at timestamp
-
-                 indexes {
-                   name [unique, name: "idx_property_name"]
-                 }
-               }
-               """)
-    end
-
-    test "parse file" do
-      assert {:ok, dbml} = DBML.parse_file("test/dbml/test1.dbml")
-      assert dbml != ""
+                ],
+                column: [name: "property_id", type: "integer", settings: [primary: true]],
+                column: [name: "name", type: "varchar", settings: [null: false]],
+                column: [name: "url", type: "varchar"],
+                column: [name: "created_at", type: "timestamp", settings: [null: false]],
+                column: [name: "updated_at", type: "timestamp"],
+                indexes: [
+                  [columns: ["name"], options: [unique: true, name: "idx_property_name"]]
+                ],
+                note: "  Defines a unit of measure,\n  which is a multi-line string\n"
+              ]
+            ]
+          ]}
+        = DBML.parse_file("test/dbml/test1.dbml")
     end
   end
 end

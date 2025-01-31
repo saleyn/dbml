@@ -5,3 +5,11 @@ compile: deps
 
 deps:
 	mix deps.get
+
+test:
+	mix test
+
+run:
+	iex -S mix
+
+.PHONY: test

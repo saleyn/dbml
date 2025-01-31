@@ -37,7 +37,9 @@ defmodule DBML.Parser do
       |> utf8_char([])
     )
     |> ignore(string("'''"))
-    |> reduce({IO, :iodata_to_binary, []})
+    |> reduce({DBML.Utils, :trim_multiline_string_prefix, []})
+
+    #|> reduce({IO, :iodata_to_binary, []})
 
   quoted_string = choice([double_quoted_string, single_quoted_string, multiline_string])
 
