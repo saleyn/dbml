@@ -111,39 +111,88 @@ defmodule DBML.ParserTest do
       assert tokens != []
       assert "CMS" == get_in(tokens, [:project, :name])
       assert "users" == get_in(tokens, [:table, :name])
-      assert 4 == get_in(tokens, [:table, :definitions]) |> length()
+      assert 4 == get_in(tokens, [:table, :fields]) |> length()
     end
 
     test "parse file" do
       assert {:ok,
-          [
-            table: [
-              name: "property",
-              definitions: [
-                column: [
-                  name: "unit_id",
-                  type: "integer",
-                  settings: [
-                    primary: true,
-                    reference: [
-                      type: :many_to_one,
-                      related: [table: "unit", column: "unit_id"]
-                    ]
-                  ]
-                ],
-                column: [name: "property_id", type: "integer", settings: [primary: true]],
-                column: [name: "name", type: "varchar", settings: [null: false]],
-                column: [name: "url", type: "varchar"],
-                column: [name: "created_at", type: "timestamp", settings: [null: false]],
-                column: [name: "updated_at", type: "timestamp"],
-                indexes: [
-                  [columns: ["name"], options: [unique: true, name: "idx_property_name"]]
-                ],
-                note: "  Defines a unit of measure,\n  which is a multi-line string\n"
-              ]
-            ]
-          ]}
-        = DBML.parse_file("test/dbml/test1.dbml")
+              [
+                table: %{
+                  name: "property",
+                  fields: [
+                    %{
+                      name: "unit_id",
+                      type: "integer",
+                      primary: true,
+                      reference: %{
+                        type: :many_to_one,
+                        related: %{table: "unit", column: "unit_id"}
+                      }
+                    },
+                    %{name: "property_id", type: "integer", primary: true},
+                    %{name: "name", type: "varchar", null: false},
+                    %{name: "url", type: "varchar"},
+                    %{name: "created_at", type: "timestamp", null: false},
+                    %{name: "updated_at", type: "timestamp"}
+                  ],
+                  note: "  Defines a unit of measure,\n  which is a multi-line string\n",
+                  indexes: [%{name: "idx_property_name", columns: ["name"], unique: true}]
+                }
+              ]} =
+               DBML.parse_file("test/data/table.dbml")
     end
+
+    test "parses an enum" do
+      assert {:ok,
+              [
+                enum: %{
+                  name: "user_role",
+                  items: [%{value: "admin"}, %{value: "user"}, %{value: "guest"}]
+                }
+              ]} =
+               DBML.parse("""
+               enum user_role {
+                 admin
+                 user
+                 guest
+               }
+               """)
+    end
+
+    test "parses an enum from file" do
+      assert {:ok,
+      [
+        enum: %{
+          name: "color",
+          items: [
+            %{value: "abc", note: "Test1"},
+            %{value: "efg", note: "Test2"},
+            %{value: "hij"},
+            %{value: "klm"}
+          ]
+        }
+      ]} = DBML.parse_file("test/data/enum.dbml")
+    end
+
+    test "parses miscellaneous tables" do
+      assert {:ok, tokens} = DBML.parse_file("test/data/misc.dbml")
+      assert 3 == Enum.count(tokens, fn({k,_}) -> k == :table end)
+    end
+
+    test "ignore multi-line comment" do
+      assert {:ok,
+              [
+                enum: %{name: "abc", items: [%{value: "a"}, %{value: "b"}]}
+              ]} =
+               DBML.parse("""
+                /* This
+                is
+                a multiline
+                comment
+                */ enum abc { a b }
+                """)
+    end
+
+
   end
 end

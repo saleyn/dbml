@@ -1,0 +1,40 @@
+enum color {
+  abc
+  efg // Test comment
+}
+
+Table bed as B {
+  bed_id integer [primary key]
+  type bed_type [primary key, note: "twin, full, king"]
+  created_at timestamp [not null]
+  updated_at timestamp
+  Note: 'Stores bed info'
+
+  indexes {
+    booking_date
+    description [unique, name: 'idx_bed_profile_description', note: 'Text']
+    (id, country) [pk] // composite primary key
+    (country, booking_date) [unique]
+    booking_date [type: hash]
+    (`id*2`)
+  }
+}
+
+Table unit_profile {
+  unit_id integer [primary key, ref: > unit.unit_id]
+  profile_id integer [primary key, ref: > profile.profile_id]
+  created_at timestamp [not null, note: "This is a timestamp"]
+  updated_at timestamp
+  note: '''
+    Defines unit profile,
+    which is a multi-line string
+  '''
+}
+
+Table user {
+  full_name string [primary key]
+
+  note {
+    'User table'
+  }
+}

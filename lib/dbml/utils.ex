@@ -17,9 +17,11 @@ defmodule DBML.Utils do
   """
   def trim_multiline_string_prefix(iodata) do
     str = IO.iodata_to_binary(iodata)
+
     sfx =
       Regex.run(~r/(\n\s+)$/, str)
       |> Enum.at(1)
+
     if sfx do
       String.replace(str, sfx, "", global: false) |> String.replace(sfx, "\n")
     else

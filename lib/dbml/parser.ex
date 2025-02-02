@@ -13,10 +13,22 @@ defmodule DBML.Parser do
   required_whitespaces = ignore(ascii_string(@whitespace_characters, min: 1))
   optional_whitespaces = ignore(ascii_string(@whitespace_characters, min: 0))
 
-  comment =
+  single_line_comment =
     lookahead(string("//"))
     |> ignore(string("//"))
     |> ascii_string([not: ?\n], min: 1)
+
+  multi_line_comment =
+    lookahead(string("/*"))
+    |> ignore(string("/*"))
+    |> repeat(
+      lookahead_not(string("*/"))
+      |> utf8_char([])
+      |> ignore()
+    )
+    |> ignore(string("*/"))
+
+  comment = choice([single_line_comment, multi_line_comment])
 
   misc = ignore(choice([comment, required_whitespaces]))
 
@@ -38,8 +50,6 @@ defmodule DBML.Parser do
     )
     |> ignore(string("'''"))
     |> reduce({DBML.Utils, :trim_multiline_string_prefix, []})
-
-    #|> reduce({IO, :iodata_to_binary, []})
 
   quoted_string = choice([double_quoted_string, single_quoted_string, multiline_string])
 
@@ -68,9 +78,14 @@ defmodule DBML.Parser do
       ascii_string([?0..?9, ?A..?Z, ?a..?z, ?_], min: 1)
     ])
 
+  defcombinatorp(
+    :primary_key,
+    choice([string("pk"), string("primary key")]) |> replace(true) |> unwrap_and_tag(:primary)
+  )
+
   note_definition =
-    lookahead(string("note"))
-    |> ignore(string("note"))
+    lookahead(choice([string("note"), string("Note")]))
+    |> ignore(choice([string("note"), string("Note")]))
     |> repeat(misc)
     |> choice([
       lookahead(string("{"))
@@ -105,7 +120,7 @@ defmodule DBML.Parser do
     |> repeat(misc)
     |> tag(project_definitions, :definitions)
 
-  # Tables.
+  # Tables
 
   column_type =
     choice([
@@ -117,7 +132,7 @@ defmodule DBML.Parser do
     unwrap_and_tag(identifier, :table)
     |> ignore(string("."))
     |> unwrap_and_tag(identifier, :column)
-    |> wrap()
+    |> reduce({:maps, :from_list, []})
 
   default_choices = choice([quoted_string, number, boolean, expression, null])
 
@@ -135,6 +150,7 @@ defmodule DBML.Parser do
     |> unwrap_and_tag(ref_type, :type)
     |> concat(optional_spaces)
     |> unwrap_and_tag(ref_column, :related)
+    |> reduce({:maps, :from_list, []})
 
   column_setting =
     choice([
@@ -142,15 +158,16 @@ defmodule DBML.Parser do
       |> repeat(misc)
       |> concat(default_choices)
       |> unwrap_and_tag(:default),
-      choice([string("pk"), string("primary key"), string("primary")])
-      |> replace(true)
-      |> unwrap_and_tag(:primary),
+      parsec(:primary_key),
       ignore(string("increment")) |> replace(true) |> unwrap_and_tag(:autoincrement),
       ignore(string("unique")) |> replace(true) |> unwrap_and_tag(:unique),
       ignore(string("null")) |> replace(true) |> unwrap_and_tag(:null),
       ignore(string("not null")) |> replace(false) |> unwrap_and_tag(:null),
-      ignore(string("note:")) |> repeat(misc) |> concat(quoted_string) |> unwrap_and_tag(:note),
-      tag(column_ref, :reference)
+      ignore(choice([string("note:"), string("Note:")]))
+      |> repeat(misc)
+      |> concat(quoted_string)
+      |> unwrap_and_tag(:note),
+      unwrap_and_tag(column_ref, :reference)
     ])
 
   column_settings =
@@ -166,27 +183,28 @@ defmodule DBML.Parser do
       ])
     )
     |> ignore(string("]"))
-    |> wrap()
 
   column_definition =
     unwrap_and_tag(identifier, :name)
     |> ignore(required_spaces)
     |> unwrap_and_tag(column_type, :type)
     |> optional(
-      ignore(required_spaces)
-      |> unwrap_and_tag(column_settings, :settings)
+      ignore(optional_spaces)
+      |> concat(column_settings)
     )
+    |> reduce({:maps, :from_list, []})
 
   index_setting =
     choice([
       misc,
-      string("pk") |> replace(true) |> unwrap_and_tag(:primary),
+      parsec(:primary_key),
       string("unique") |> replace(true) |> unwrap_and_tag(:unique),
       ignore(string("type:"))
       |> repeat(misc)
       |> choice([string("hash"), string("btree")])
       |> unwrap_and_tag(:type),
-      ignore(string("name:")) |> repeat(misc) |> concat(identifier) |> unwrap_and_tag(:name)
+      ignore(string("name:")) |> repeat(misc) |> concat(identifier) |> unwrap_and_tag(:name),
+      ignore(string("note:")) |> repeat(misc) |> concat(quoted_string) |> unwrap_and_tag(:note)
     ])
 
   index_settings =
@@ -208,9 +226,9 @@ defmodule DBML.Parser do
 
   single_column_index =
     tag(identifier, :columns)
-    |> ignore(required_spaces)
-    |> tag(optional(index_settings), :options)
-    |> wrap()
+    |> ignore(optional_spaces)
+    |> concat(optional(index_settings))
+    |> reduce({:maps, :from_list, []})
 
   composite_index =
     lookahead(string("("))
@@ -229,36 +247,19 @@ defmodule DBML.Parser do
     |> ignore(string(")"))
     |> tag(:columns)
     |> ignore(optional_spaces)
-    |> tag(optional(index_settings), :options)
-    |> wrap()
+    |> concat(optional(index_settings))
+    |> reduce({:maps, :from_list, []})
 
   index_definition = choice([composite_index, single_column_index])
 
   indexes =
-    lookahead(string("indexes"))
-    |> ignore(string("indexes"))
+    lookahead(choice([string("indexes"), string("Indexes")]))
+    |> ignore(choice([string("indexes"), string("Indexes")]))
     |> repeat(misc)
     |> ignore(string("{"))
     |> repeat(choice([misc, index_definition]))
     |> ignore(string("}"))
     |> wrap()
-
-  table_definitions =
-    ignore(string("{"))
-    |> repeat(
-      choice([
-        misc,
-        tag(column_definition, :column)
-      ])
-    )
-    |> repeat(
-      choice([
-        misc,
-        unwrap_and_tag(note_definition, :note),
-        unwrap_and_tag(indexes, :indexes)
-      ])
-    )
-    |> ignore(string("}"))
 
   table =
     lookahead(choice([string("table"), string("Table")]))
@@ -272,10 +273,29 @@ defmodule DBML.Parser do
       |> concat(identifier)
       |> unwrap_and_tag(:alias)
     )
-    |> repeat(misc)
-    |> tag(table_definitions, :definitions)
+    |> ignore(repeat(misc))
+    # |> reduce(table_definitions, {:maps, :from_list, []})
+    |> ignore(string("{"))
+    |> concat(
+      repeat(
+        choice([
+          misc,
+          column_definition
+        ])
+      )
+      |> tag(:fields)
+    )
+    |> repeat(
+      choice([
+        misc,
+        unwrap_and_tag(note_definition, :note),
+        unwrap_and_tag(indexes, :indexes)
+      ])
+    )
+    |> ignore(string("}"))
+    |> reduce({:maps, :from_list, []})
 
-  # Table groups.
+  # Table groups
   table_group =
     lookahead(choice([string("tablegroup"), string("Tablegroup")]))
     |> ignore(choice([string("tablegroup"), string("Tablegroup")]))
@@ -284,31 +304,43 @@ defmodule DBML.Parser do
     |> repeat(choice([misc, identifier]))
     |> ignore(string("}"))
 
-  # Enum
-  enum_definition =
+  # Define enum value parser
+  enum_value =
     unwrap_and_tag(identifier, :value)
-    |> repeat(misc)
     |> optional(
-      lookahead(string("["))
+      repeat(misc)
+      |> lookahead(string("["))
       |> ignore(string("["))
       |> repeat(misc)
-      |> ignore(string("note:"))
+      |> ignore(choice([string("note:"), string("Note:")]))
       |> repeat(misc)
       |> unwrap_and_tag(quoted_string, :note)
       |> repeat(misc)
       |> ignore(string("]"))
+      |> repeat(misc)
     )
-    |> wrap()
-
-  enum =
-    lookahead(string("enum"))
-    |> ignore(string("enum"))
-    |> ignore(required_spaces)
-    |> unwrap_and_tag(identifier, :name)
     |> repeat(misc)
+
+  # Define enum parser with comma-separated values
+  enum =
+    lookahead(choice([string("enum"), string("Enum")]))
+    |> ignore(choice([string("enum"), string("Enum")]))
+    |> ignore(misc)
+    # Enum name
+    |> unwrap_and_tag(identifier, :name)
+    |> ignore(misc)
     |> ignore(string("{"))
-    |> tag(repeat(choice([misc, enum_definition])), :values)
+    |> ignore(optional(misc))
+    |> tag(
+      reduce(enum_value, {:maps, :from_list, []})
+      |> optional(
+        repeat(reduce(enum_value, {:maps, :from_list, []}))
+      )
+      |> ignore(optional(misc)),
+      :items
+    )
     |> ignore(string("}"))
+    |> reduce({:maps, :from_list, []})
 
   # References
   ref_short_form =
@@ -341,15 +373,16 @@ defmodule DBML.Parser do
       |> tag(identifier, :name)
     )
     |> choice([ref_short_form, ref_long_form])
+    |> reduce({:maps, :from_list, []})
 
   parser =
     repeat(
       choice([
-        misc,
+        ignore(misc),
         tag(project, :project),
-        tag(table, :table),
+        unwrap_and_tag(table, :table),
         tag(table_group, :table_group),
-        tag(enum, :enum),
+        unwrap_and_tag(enum, :enum),
         tag(ref, :ref)
       ])
     )
@@ -358,7 +391,7 @@ defmodule DBML.Parser do
   # defparsec(:project, project)
   # defparsec(:table, table)
   # defparsec(:table_group, table_group)
-  # defparsec(:enum, enum)
+  defparsec(:enum, enum)
   # defparsec(:ref, ref)
   defparsec(:parse, parser)
 end

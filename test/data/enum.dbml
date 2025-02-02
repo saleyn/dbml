@@ -1,0 +1,6 @@
+enum color {
+  abc [note: "Test1"]
+  efg [note: "Test2"] // column note
+  hij // column note2
+  klm
+}
