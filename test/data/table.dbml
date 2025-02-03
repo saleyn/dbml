@@ -13,8 +13,20 @@ Table property {
     name [unique, name: "idx_property_name"]
   }
 
-  note: '''
+  Note: '''
     Defines a unit of measure,
     which is a multi-line string
   '''
+}
+
+Table user1 [] {
+  f1 string
+}
+
+Table user2 [note: 'User table'] {
+  f1 string
+}
+
+Table user3 [note: 'User table', color: #123aaa] {
+  f1 string
 }

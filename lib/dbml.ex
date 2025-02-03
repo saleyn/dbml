@@ -11,6 +11,9 @@ defmodule DBML do
       {:ok, tokens, "", _, _, _} ->
         {:ok, tokens}
 
+      {:ok, _, str, _, loc, pos} ->
+        {:error, %{input: str, location: loc, position: pos}}
+
       other ->
         {:error, other}
     end

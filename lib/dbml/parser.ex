@@ -1,9 +1,23 @@
+defmodule DBML.Parser.Helper do
+  import NimbleParsec
+
+  def keyword(<<c, rest::binary>> = keyword) when c in ?a..?z do
+    choice([string(keyword), string(<<c-32, rest::binary>>)])
+  end
+
+  def find_and_ignore_keyword(keyword) do
+    lookahead(keyword(keyword))
+    |> ignore(keyword(keyword))
+  end
+end
+
 defmodule DBML.Parser do
   @moduledoc false
   import NimbleParsec
+  import DBML.Parser.Helper
 
   @space_characters [?\s]
-  @newline_characters [?\n]
+  @newline_characters [?\r, ?\n]
   @whitespace_characters @space_characters ++ @newline_characters
 
   # Misc.
@@ -83,9 +97,45 @@ defmodule DBML.Parser do
     choice([string("pk"), string("primary key")]) |> replace(true) |> unwrap_and_tag(:primary)
   )
 
+  color =
+    ascii_char([?#])
+    |> ascii_string([?0..?9, ?A..?Z, ?a..?z], min: 3, max: 8)
+    |> reduce({:string, :uppercase, []})
+    |> reduce({:to_string, []})
+
+  setting =
+    utf8_string([?0..?9, ?A..?Z, ?a..?z, ?_], min: 1)
+    |> ignore(ascii_char([?:]))
+    |> reduce({DBML.Utils, :maybe_atom, []})
+    |> ignore(misc)
+    |> choice([
+      quoted_string,
+      color
+    ])
+    |> optional(ignore(string(",")))
+    |> reduce({List, :to_tuple, []})
+
+  settings =
+    ignore(string("["))
+    |> repeat(choice([setting, misc]))
+    |> ignore(string("]"))
+    |> reduce({:maps, :from_list, []})
+    |> unwrap_and_tag(:settings)
+    |> ignore(misc)
+
+  # Matches optional "[note: 'some any-quoted note']"
+  defcombinatorp(
+    :optional_settings,
+    optional(
+      ignore(optional_spaces)
+      |> concat(settings)
+    )
+    |> repeat(misc)
+  )
+
   note_definition =
-    lookahead(choice([string("note"), string("Note")]))
-    |> ignore(choice([string("note"), string("Note")]))
+    lookahead(string("Note"))
+    |> ignore(string("Note"))
     |> repeat(misc)
     |> choice([
       lookahead(string("{"))
@@ -113,8 +163,7 @@ defmodule DBML.Parser do
     |> ignore(string("}"))
 
   project =
-    lookahead(string("project"))
-    |> ignore(string("project"))
+    find_and_ignore_keyword("project")
     |> ignore(required_spaces)
     |> unwrap_and_tag(identifier, :name)
     |> repeat(misc)
@@ -163,10 +212,7 @@ defmodule DBML.Parser do
       ignore(string("unique")) |> replace(true) |> unwrap_and_tag(:unique),
       ignore(string("null")) |> replace(true) |> unwrap_and_tag(:null),
       ignore(string("not null")) |> replace(false) |> unwrap_and_tag(:null),
-      ignore(choice([string("note:"), string("Note:")]))
-      |> repeat(misc)
-      |> concat(quoted_string)
-      |> unwrap_and_tag(:note),
+      ignore(string("note:")) |> repeat(misc) |> concat(quoted_string) |> unwrap_and_tag(:note),
       unwrap_and_tag(column_ref, :reference)
     ])
 
@@ -253,8 +299,8 @@ defmodule DBML.Parser do
   index_definition = choice([composite_index, single_column_index])
 
   indexes =
-    lookahead(choice([string("indexes"), string("Indexes")]))
-    |> ignore(choice([string("indexes"), string("Indexes")]))
+    lookahead(string("indexes"))
+    |> ignore(string("indexes"))
     |> repeat(misc)
     |> ignore(string("{"))
     |> repeat(choice([misc, index_definition]))
@@ -262,8 +308,7 @@ defmodule DBML.Parser do
     |> wrap()
 
   table =
-    lookahead(choice([string("table"), string("Table")]))
-    |> ignore(choice([string("table"), string("Table")]))
+    find_and_ignore_keyword("table")
     |> ignore(required_spaces)
     |> unwrap_and_tag(identifier, :name)
     |> optional(
@@ -274,6 +319,7 @@ defmodule DBML.Parser do
       |> unwrap_and_tag(:alias)
     )
     |> ignore(repeat(misc))
+    |> parsec(:optional_settings)
     # |> reduce(table_definitions, {:maps, :from_list, []})
     |> ignore(string("{"))
     |> concat(
@@ -297,34 +343,30 @@ defmodule DBML.Parser do
 
   # Table groups
   table_group =
-    lookahead(choice([string("tablegroup"), string("Tablegroup")]))
-    |> ignore(choice([string("tablegroup"), string("Tablegroup")]))
+    lookahead(string("TableGroup"))
+    |> ignore(string("TableGroup"))
     |> repeat(misc)
-    |> ignore(string("{"))
-    |> repeat(choice([misc, identifier]))
-    |> ignore(string("}"))
+    |> unwrap_and_tag(identifier, :name)
+    |> repeat(misc)
+    |> parsec(:optional_settings)
+    |> tag(
+      ignore(string("{"))
+      |> repeat(choice([misc, identifier]))
+      |> ignore(string("}")),
+      :tables
+    )
+    |> reduce({:maps, :from_list, []})
 
   # Define enum value parser
   enum_value =
     unwrap_and_tag(identifier, :value)
-    |> optional(
-      repeat(misc)
-      |> lookahead(string("["))
-      |> ignore(string("["))
-      |> repeat(misc)
-      |> ignore(choice([string("note:"), string("Note:")]))
-      |> repeat(misc)
-      |> unwrap_and_tag(quoted_string, :note)
-      |> repeat(misc)
-      |> ignore(string("]"))
-      |> repeat(misc)
-    )
+    |> parsec(:optional_settings)
     |> repeat(misc)
 
   # Define enum parser with comma-separated values
   enum =
-    lookahead(choice([string("enum"), string("Enum")]))
-    |> ignore(choice([string("enum"), string("Enum")]))
+    lookahead(string("enum"))
+    |> ignore(string("enum"))
     |> ignore(misc)
     # Enum name
     |> unwrap_and_tag(identifier, :name)
@@ -366,8 +408,8 @@ defmodule DBML.Parser do
     |> ignore(string("}"))
 
   ref =
-    lookahead(choice([string("ref"), string("Ref")]))
-    |> ignore(choice([string("ref"), string("Ref")]))
+    lookahead(string("Ref"))
+    |> ignore(string("Ref"))
     |> optional(
       ignore(required_spaces)
       |> tag(identifier, :name)
@@ -381,7 +423,7 @@ defmodule DBML.Parser do
         ignore(misc),
         tag(project, :project),
         unwrap_and_tag(table, :table),
-        tag(table_group, :table_group),
+        unwrap_and_tag(table_group, :table_group),
         unwrap_and_tag(enum, :enum),
         tag(ref, :ref)
       ])

@@ -12,20 +12,23 @@ defmodule DBML.Utils do
     -to_number([whole, decimal])
   end
 
+  def maybe_atom([str]), do: maybe_atom(str)
+  def maybe_atom(str) do
+    (str in ["note", "color"]) && String.to_atom(str) || str
+  end
+
   @doc """
-  Remove the prefix based on the trailing "\n   ..." from a multiline string
+  Remove the prefix based on the trailing "\r?\n   ..." from a multiline string
   """
   def trim_multiline_string_prefix(iodata) do
-    str = IO.iodata_to_binary(iodata)
+    str = IO.chardata_to_string(iodata)
 
-    sfx =
-      Regex.run(~r/(\n\s+)$/, str)
-      |> Enum.at(1)
-
-    if sfx do
-      String.replace(str, sfx, "", global: false) |> String.replace(sfx, "\n")
-    else
-      str
+    case Regex.run(~r/(\r?\n\s+)$/, str) do
+      [_, sfx] ->
+        str = String.starts_with?(str, sfx) && String.replace(str, sfx, "", global: false) || str
+        String.replace(str, sfx, "\n")
+      nil ->
+        str
     end
   end
 end

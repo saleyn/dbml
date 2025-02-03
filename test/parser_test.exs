@@ -15,14 +15,14 @@ defmodule DBML.ParserTest do
                //// -- tables and references
 
                // Creating tables
-               table users as U {
+               Table users as U {
                  id int [pk, increment]
                  full_name varchar
                  created_at timestamp
                  country_code int
                }
 
-               table countries {
+               Table countries {
                  code int [pk]
                  name varchar
                  continent_name varchar
@@ -31,23 +31,23 @@ defmodule DBML.ParserTest do
                // Creating references
                // You can also define relaionship separately
                // > many-to-one; < one-to-many; - one-to-one
-               ref: U.country_code > countries.code
-               ref: merchants.country_code > countries.code
+               Ref: U.country_code > countries.code
+               Ref: merchants.country_code > countries.code
 
                //----------------------------------------------//
 
                //// -- LEVEL 2
                //// -- Adding column settings
 
-               table order_items {
+               Table order_items {
                  order_id int [ref: > orders.id] // inline relationship (many-to-one)
                  product_id int
                  quantity int [default: 1] // default value
                }
 
-               ref: order_items.product_id > products.id
+               Ref: order_items.product_id > products.id
 
-               table orders {
+               Table orders {
                  id int [pk] // primary key
                  user_id int [not null, unique]
                  status varchar
@@ -80,7 +80,7 @@ defmodule DBML.ParserTest do
                    id [unique]
                  }
 
-                 note {
+                 Note {
                    'asdfasd'
                  }
                }
@@ -105,7 +105,7 @@ defmodule DBML.ParserTest do
                  end_date datetime
                }
 
-               ref: products.merchant_id > merchants.id // many-to-one
+               Ref: products.merchant_id > merchants.id // many-to-one
                """)
 
       assert tokens != []
@@ -137,7 +137,10 @@ defmodule DBML.ParserTest do
                   ],
                   note: "  Defines a unit of measure,\n  which is a multi-line string\n",
                   indexes: [%{name: "idx_property_name", columns: ["name"], unique: true}]
-                }
+                },
+                table: %{name: "user1", fields: [%{name: "f1", type: "string"}], settings: %{}},
+                table: %{name: "user2", fields: [%{name: "f1", type: "string"}], settings: %{note: "User table"}},
+                table: %{name: "user3", fields: [%{name: "f1", type: "string"}], settings: %{color: "#123AAA", note: "User table"}}
               ]} =
                DBML.parse_file("test/data/table.dbml")
     end
@@ -160,23 +163,25 @@ defmodule DBML.ParserTest do
     end
 
     test "parses an enum from file" do
-      assert {:ok,
-      [
-        enum: %{
-          name: "color",
-          items: [
-            %{value: "abc", note: "Test1"},
-            %{value: "efg", note: "Test2"},
-            %{value: "hij"},
-            %{value: "klm"}
-          ]
-        }
-      ]} = DBML.parse_file("test/data/enum.dbml")
+      assert {
+        :ok,
+        [
+          enum: %{
+            items: [
+              %{value: "abc", settings: %{note: "Test1"}},
+              %{value: "efg", settings: %{note: "Test2"}},
+              %{value: "hij"},
+              %{value: "klm"}
+            ],
+            name: "color"
+          }
+        ]
+      } = DBML.parse_file("test/data/enum.dbml")
     end
 
     test "parses miscellaneous tables" do
       assert {:ok, tokens} = DBML.parse_file("test/data/misc.dbml")
-      assert 3 == Enum.count(tokens, fn({k,_}) -> k == :table end)
+      assert 2 == Enum.count(tokens, fn({k,_}) -> k == :table end)
     end
 
     test "ignore multi-line comment" do

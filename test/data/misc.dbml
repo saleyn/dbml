@@ -7,7 +7,13 @@ Table bed as B {
   bed_id integer [primary key]
   type bed_type [primary key, note: "twin, full, king"]
   created_at timestamp [not null]
-  updated_at timestamp
+  updated_at timestamp [note: '''
+    💸 1 = processing,
+    ✔️ 2 = shipped,
+    ❌ 3 = cancelled,
+    😔 4 = refunded
+    '''
+  ]
   Note: 'Stores bed info'
 
   indexes {
@@ -25,16 +31,14 @@ Table unit_profile {
   profile_id integer [primary key, ref: > profile.profile_id]
   created_at timestamp [not null, note: "This is a timestamp"]
   updated_at timestamp
-  note: '''
+  Note: '''
     Defines unit profile,
     which is a multi-line string
   '''
 }
 
-Table user {
-  full_name string [primary key]
-
-  note {
-    'User table'
-  }
+TableGroup tablegroup_name [color: #345abc] { // tablegroup is case-insensitive.
+  B
+  unit_profile
+  user
 }
