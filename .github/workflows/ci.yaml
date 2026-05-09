@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    name: Test (OTP ${{ matrix.otp }}, Elixir ${{ matrix.elixir }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          # Elixir 1.15 with OTP 26 (minimum supported)
+          - elixir: "1.15"
+            otp: "26"
+          # Elixir 1.16 with OTP 26
+          - elixir: "1.16"
+            otp: "26"
+          # Elixir 1.17 with OTP 27
+          - elixir: "1.17"
+            otp: "27"
+          # Latest stable versions
+          - elixir: "1.19"
+            otp: "28"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir
+        uses: erlef/setup-elixir@v1
+        with:
+          elixir-version: ${{ matrix.elixir }}
+          otp-version: ${{ matrix.otp }}
+          cache-key: v1
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check code format
+        run: mix format --check-formatted
+
+      - name: Run tests
+        run: mix test
+
+      - name: Run doctests
+        run: mix test --doctest
+
+  static_analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir
+        uses: erlef/setup-elixir@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "28"
+          cache-key: v1
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Run Credo
+        run: mix credo suggest --strict
+        continue-on-error: true
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir
+        uses: erlef/setup-elixir@v1
+        with:
+          elixir-version: "1.19"
+          otp-version: "28"
+          cache-key: v1
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Generate documentation
+        run: mix docs
+
+      - name: Check that docs build successfully
+        run: test -d doc && echo "✅ Documentation generated successfully"
