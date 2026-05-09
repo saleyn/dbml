@@ -13,7 +13,7 @@ defmodule DBML.Ecto.Generator do
       |> Keyword.get_values(:table)
       |> Enum.map(fn table ->
         content = generate_schema(table, namespace, refs, enums_map, singularize)
-        filename = table[:name] |> String.replace(" ", "_") |> String.downcase() |> Kernel.<>(".ex")
+        filename = table.name |> String.replace(" ", "_") |> String.downcase() |> Kernel.<>(".ex")
         path = Path.join(output_dir, filename)
         {path, content}
       end)
@@ -46,8 +46,8 @@ defmodule DBML.Ecto.Generator do
   defp build_alias_map(tokens) do
     tokens
     |> Keyword.get_values(:table)
-    |> Enum.filter(&Keyword.has_key?(&1, :alias))
-    |> Enum.into(%{}, fn t -> {t[:alias], t[:name]} end)
+    |> Enum.filter(&Map.has_key?(&1, :alias))
+    |> Enum.into(%{}, fn t -> {t.alias, t.name} end)
   end
 
   defp collect_refs(tokens, alias_map) do
@@ -56,33 +56,32 @@ defmodule DBML.Ecto.Generator do
     standalone =
       tokens
       |> Keyword.get_values(:ref)
+      |> List.flatten()
       |> Enum.map(fn ref ->
-        owner_table = resolve.(ref[:owner][:table])
-        owner_col = ref[:owner][:column]
-        rel_table = resolve.(ref[:related][:table])
-        rel_col = ref[:related][:column]
-        {{owner_table, owner_col}, {ref[:type], rel_table, rel_col}}
+        owner_table = resolve.(ref.owner.table)
+        owner_col = ref.owner.column
+        rel_table = resolve.(ref.related.table)
+        rel_col = ref.related.column
+        {{owner_table, owner_col}, {ref.type, rel_table, rel_col}}
       end)
 
     inline =
       tokens
       |> Keyword.get_values(:table)
       |> Enum.flat_map(fn table ->
-        table_name = table[:name]
+        table_name = table.name
+        fields = table.fields || []
 
-        table[:definitions]
-        |> Keyword.get_values(:column)
+        fields
         |> Enum.flat_map(fn col ->
-          settings = col[:settings] || []
-
-          case Keyword.get(settings, :reference) do
+          case Map.get(col, :reference) do
             nil ->
               []
 
             ref ->
-              rel_table = resolve.(ref[:related][:table])
-              rel_col = ref[:related][:column]
-              [{{table_name, col[:name]}, {ref[:type], rel_table, rel_col}}]
+              rel_table = resolve.(ref.related.table)
+              rel_col = ref.related.column
+              [{{table_name, col.name}, {ref.type, rel_table, rel_col}}]
           end
         end)
       end)
@@ -94,21 +93,19 @@ defmodule DBML.Ecto.Generator do
     tokens
     |> Keyword.get_values(:enum)
     |> Enum.into(%{}, fn enum ->
-      values = enum[:values] |> Enum.map(& &1[:value])
-      {enum[:name], values}
+      values = enum.items |> Enum.map(& &1.value)
+      {enum.name, values}
     end)
   end
 
   defp generate_schema(table, namespace, refs, enums_map, singularize) do
-    table_name = table[:name]
-    definitions = table[:definitions]
-    columns = Keyword.get_values(definitions, :column)
-    indexes = Keyword.get(definitions, :indexes) || []
-    col_names = Enum.map(columns, & &1[:name])
+    table_name = table.name
+    columns = table.fields || []
+    col_names = Enum.map(columns, & &1.name)
 
     has_timestamps = "created_at" in col_names and "updated_at" in col_names
 
-    {pk_annotation, skip_pk_names} = determine_pk(columns, indexes)
+    {pk_annotation, skip_pk_names} = determine_pk(columns)
 
     skip_set =
       MapSet.new(
@@ -138,13 +135,12 @@ defmodule DBML.Ecto.Generator do
     Enum.join(lines, "\n")
   end
 
-  defp determine_pk(columns, _indexes) do
+  defp determine_pk(columns) do
     integer_types = ["int", "integer", "serial", "bigserial"]
     serial_types = ["serial", "bigserial"]
 
     col_pks = Enum.filter(columns, fn col ->
-      settings = col[:settings] || []
-      Keyword.get(settings, :primary, false)
+      Map.get(col, :primary) == true
     end)
 
     cond do
@@ -153,25 +149,24 @@ defmodule DBML.Ecto.Generator do
 
       length(col_pks) == 1 ->
         pk = hd(col_pks)
-        is_standard = pk[:name] == "id" and pk[:type] in integer_types
+        is_standard = pk.name == "id" and pk.type in integer_types
 
         if is_standard do
           {nil, ["id"]}
         else
           ecto_type =
             cond do
-              pk[:type] in ["int", "integer"] -> ":integer"
-              pk[:type] in serial_types -> ":id"
-              pk[:type] == "uuid" -> ":binary_id"
-              pk[:type] in ["varchar", "char", "text"] -> ":string"
+              pk.type in ["int", "integer"] -> ":integer"
+              pk.type in serial_types -> ":id"
+              pk.type == "uuid" -> ":binary_id"
+              pk.type in ["varchar", "char", "text"] -> ":string"
               true -> ":string"
             end
 
-          settings = pk[:settings] || []
-          autogen = Keyword.get(settings, :autoincrement, false) or pk[:type] in serial_types
+          autogen = Map.get(pk, :autoincrement, false) or pk.type in serial_types
 
-          annotation = "@primary_key {:#{pk[:name]}, #{ecto_type}, autogenerate: #{autogen}}"
-          {annotation, [pk[:name]]}
+          annotation = "@primary_key {:#{pk.name}, #{ecto_type}, autogenerate: #{autogen}}"
+          {annotation, [pk.name]}
         end
 
       true ->
@@ -182,7 +177,7 @@ defmodule DBML.Ecto.Generator do
   defp generate_field_lines(columns, table_name, skip_set, refs, enums_map, namespace, singularize) do
     columns
     |> Enum.flat_map(fn col ->
-      col_name = col[:name]
+      col_name = col.name
 
       if MapSet.member?(skip_set, col_name) do
         []
@@ -198,7 +193,7 @@ defmodule DBML.Ecto.Generator do
             ["    belongs_to :#{assoc_name}, #{related_module}, foreign_key: :#{col_name_atom}"]
 
           _ ->
-            col_type = col[:type]
+            col_type = col.type
 
             case Map.get(enums_map, col_type) do
               nil ->
