@@ -36,7 +36,7 @@ Add `dbml` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:dbml, "~> 0.2"}
+    {:dbml, "~> 0.3"}
   ]
 end
 ```
