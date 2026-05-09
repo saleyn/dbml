@@ -408,8 +408,7 @@ defmodule DBML.Parser do
     |> ignore(string("}"))
 
   ref =
-    lookahead(string("Ref"))
-    |> ignore(string("Ref"))
+    find_and_ignore_keyword("ref")
     |> optional(
       ignore(required_spaces)
       |> tag(identifier, :name)
