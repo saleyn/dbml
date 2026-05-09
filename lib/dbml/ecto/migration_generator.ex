@@ -11,126 +11,105 @@ defmodule DBML.Ecto.MigrationGenerator do
     tables = Keyword.get_values(tokens, :table)
     ordered_tables = order_tables_by_deps(tables, alias_map, refs)
 
-    # Pre-compute content for all tables
-    migrations_to_write =
+    # Pre-flight check: ensure no files exist when update is false
+    with :ok <- check_file_exists(ordered_tables, output_dir, base_timestamp, update) do
+      if update do
+        generate_with_update(ordered_tables, output_dir, repo_module, refs, base_timestamp)
+      else
+        generate_all(ordered_tables, output_dir, repo_module, refs, base_timestamp)
+      end
+    end
+  end
+
+  defp check_file_exists(ordered_tables, output_dir, base_timestamp, update) do
+    if update do
+      :ok
+    else
+      migration_files =
+        ordered_tables
+        |> Enum.with_index(1)
+        |> Enum.map(fn {table, index} ->
+          timestamp = base_timestamp + index
+          filename = migration_filename(timestamp, table.name)
+          Path.join(output_dir, filename)
+        end)
+
+      case Enum.find(migration_files, &File.exists?/1) do
+        nil -> :ok
+        existing_path -> {:error, "File already exists: #{existing_path}"}
+      end
+    end
+  end
+
+  defp generate_all(ordered_tables, output_dir, repo_module, refs, base_timestamp) do
+    paths =
       ordered_tables
       |> Enum.with_index(1)
       |> Enum.map(fn {table, index} ->
-        table_snake = table[:name] |> String.replace(" ", "_") |> String.downcase()
-        content = generate_migration(table, base_timestamp + index, repo_module, refs)
-        {table_snake, table, index, content}
+        timestamp = base_timestamp + index
+        content = generate_migration(table, timestamp, repo_module, refs)
+        filename = migration_filename(timestamp, table.name)
+        path = Path.join(output_dir, filename)
+        File.write!(path, content)
+        path
       end)
 
-    if update do
-      write_migrations_with_update(migrations_to_write, output_dir, base_timestamp, repo_module, refs)
-    else
-      write_migrations_no_update(migrations_to_write, output_dir, base_timestamp)
-    end
+    {:ok, paths}
   end
 
-  defp write_migrations_no_update(migrations_to_write, output_dir, base_timestamp) do
-    # Pre-flight check: ensure no files exist
-    case Enum.with_index(migrations_to_write, 1)
-         |> Enum.find(fn {{table_snake, _, _index, _content}, seq} ->
-           path = Path.join(output_dir, "#{base_timestamp + seq}_create_#{table_snake}.exs")
-           File.exists?(path)
-         end) do
-      {{table_snake, _, _, _}, seq} ->
-        existing_path = Path.join(output_dir, "#{base_timestamp + seq}_create_#{table_snake}.exs")
-        {:error, "File already exists: #{existing_path}"}
+  defp generate_with_update(ordered_tables, output_dir, repo_module, refs, base_timestamp) do
+    # Find the highest timestamp in existing migrations
+    max_existing_timestamp =
+      case File.ls(output_dir) do
+        {:ok, files} ->
+          files
+          |> Enum.filter(&String.match?(&1, ~r/^\d+_/))
+          |> Enum.map(&String.slice(&1, 0..13))
+          |> Enum.map(&String.to_integer/1)
+          |> Enum.max(fn -> 0 end)
 
-      nil ->
-        # All clear, write all files
-        paths =
-          migrations_to_write
-          |> Enum.with_index(1)
-          |> Enum.map(fn {{table_snake, _table, _index, content}, seq} ->
-            timestamp = base_timestamp + seq
-            filename = "#{timestamp}_create_#{table_snake}.exs"
-            path = Path.join(output_dir, filename)
-            File.write!(path, content)
-            path
-          end)
+        {:error, _} ->
+          0
+      end
 
-        {:ok, paths}
-    end
-  end
-
-  defp write_migrations_with_update(migrations_to_write, output_dir, base_timestamp, _repo_module, _refs) do
-    existing_migrations = find_existing_migrations(output_dir)
-    max_ts = max_timestamp(output_dir, base_timestamp)
-    next_new_ts = max_ts + 1
-
-    {paths_written, _next_ts} =
-      migrations_to_write
+    # For update mode, check if migrations exist and compare content
+    {paths, _next_timestamp} =
+      ordered_tables
       |> Enum.with_index(1)
-      |> Enum.reduce({[], next_new_ts}, fn {{table_snake, _table, _index, content}, seq}, {paths, ts} ->
-        case Map.get(existing_migrations, table_snake) do
-          # File exists and content matches — skip
-          {_existing_path, ^content} ->
-            {paths, ts}
+      |> Enum.reduce({[], max_existing_timestamp + 1}, fn {table, index}, {acc_paths, next_ts} ->
+        timestamp = base_timestamp + index
+        content = generate_migration(table, timestamp, repo_module, refs)
+        filename = migration_filename(timestamp, table.name)
+        path = Path.join(output_dir, filename)
 
-          # File exists but content changed — write new migration
-          {_existing_path, _old_content} ->
-            filename = "#{ts}_create_#{table_snake}.exs"
-            path = Path.join(output_dir, filename)
-            File.write!(path, content)
-            {paths ++ [path], ts + 1}
-
-          # No existing file — write new migration
-          nil ->
-            timestamp = base_timestamp + seq
-            filename = "#{timestamp}_create_#{table_snake}.exs"
-            path = Path.join(output_dir, filename)
-            File.write!(path, content)
-            {paths ++ [path], ts}
+        # Check if file exists and has same content
+        if File.exists?(path) do
+          existing_content = File.read!(path)
+          if existing_content == content do
+            # Content unchanged, skip
+            {acc_paths, next_ts}
+          else
+            # Content changed, write new file with incremented timestamp
+            new_filename = migration_filename(next_ts, table.name)
+            new_path = Path.join(output_dir, new_filename)
+            File.write!(new_path, content)
+            {[new_path | acc_paths], next_ts + 1}
+          end
+        else
+          # File doesn't exist, create it
+          File.write!(path, content)
+          {[path | acc_paths], next_ts}
         end
       end)
 
-    {:ok, paths_written}
-  end
-
-  defp find_existing_migrations(output_dir) do
-    output_dir
-    |> File.ls!()
-    |> Enum.filter(&String.match?(&1, ~r/^\d+_create_.+\.exs$/))
-    |> Enum.into(%{}, fn filename ->
-      path = Path.join(output_dir, filename)
-      content = File.read!(path)
-      # Extract table name from filename like "20000101000001_create_users.exs"
-      # Pattern: NNNNNNNNNNNNNN_create_<table>.exs (14 digits + 8 chars for _create_)
-      table_snake =
-        filename
-        |> String.slice(22..-5//1)  # Skip "NNNNNNNNNNNNNN_create_" (22 chars) and ".exs" (4 chars)
-
-      {table_snake, {path, content}}
-    end)
-  rescue
-    File.Error -> %{}
-  end
-
-  defp max_timestamp(output_dir, base_timestamp) do
-    output_dir
-    |> File.ls!()
-    |> Enum.filter(&String.match?(&1, ~r/^\d+_/))
-    |> Enum.map(fn filename ->
-      filename
-      |> String.slice(0..13)
-      |> String.to_integer()
-    end)
-    |> case do
-      [] -> base_timestamp
-      timestamps -> Enum.max(timestamps)
-    end
-  rescue
-    File.Error -> base_timestamp
+    {:ok, Enum.reverse(paths)}
   end
 
   defp build_alias_map(tokens) do
     tokens
     |> Keyword.get_values(:table)
-    |> Enum.filter(&Keyword.has_key?(&1, :alias))
-    |> Enum.into(%{}, fn t -> {t[:alias], t[:name]} end)
+    |> Enum.filter(&Map.has_key?(&1, :alias))
+    |> Enum.into(%{}, fn t -> {t.alias, t.name} end)
   end
 
   defp collect_refs(tokens, alias_map) do
@@ -139,33 +118,32 @@ defmodule DBML.Ecto.MigrationGenerator do
     standalone =
       tokens
       |> Keyword.get_values(:ref)
+      |> List.flatten()
       |> Enum.map(fn ref ->
-        owner_table = resolve.(ref[:owner][:table])
-        owner_col = ref[:owner][:column]
-        rel_table = resolve.(ref[:related][:table])
-        rel_col = ref[:related][:column]
-        {{owner_table, owner_col}, {ref[:type], rel_table, rel_col}}
+        owner_table = resolve.(ref.owner.table)
+        owner_col = ref.owner.column
+        rel_table = resolve.(ref.related.table)
+        rel_col = ref.related.column
+        {{owner_table, owner_col}, {ref.type, rel_table, rel_col}}
       end)
 
     inline =
       tokens
       |> Keyword.get_values(:table)
       |> Enum.flat_map(fn table ->
-        table_name = table[:name]
+        table_name = table.name
+        fields = table.fields || []
 
-        table[:definitions]
-        |> Keyword.get_values(:column)
+        fields
         |> Enum.flat_map(fn col ->
-          settings = col[:settings] || []
-
-          case Keyword.get(settings, :reference) do
+          case Map.get(col, :reference) do
             nil ->
               []
 
             ref ->
-              rel_table = resolve.(ref[:related][:table])
-              rel_col = ref[:related][:column]
-              [{{table_name, col[:name]}, {ref[:type], rel_table, rel_col}}]
+              rel_table = resolve.(ref.related.table)
+              rel_col = ref.related.column
+              [{{table_name, col.name}, {ref.type, rel_table, rel_col}}]
           end
         end)
       end)
@@ -187,20 +165,18 @@ defmodule DBML.Ecto.MigrationGenerator do
   end
 
   defp build_dependencies(tables, refs, resolve) do
-    table_names = Enum.map(tables, & &1[:name]) |> MapSet.new()
+    table_names = Enum.map(tables, & &1.name) |> MapSet.new()
 
     Enum.into(tables, %{}, fn table ->
-      name = table[:name]
-      definitions = table[:definitions]
+      name = table.name
+      fields = table.fields || []
 
       deps =
-        Keyword.get_values(definitions, :column)
+        fields
         |> Enum.flat_map(fn col ->
-          settings = col[:settings] || []
-
-          case Keyword.get(settings, :reference) do
+          case Map.get(col, :reference) do
             nil ->
-              case Map.get(refs, {name, col[:name]}) do
+              case Map.get(refs, {name, col.name}) do
                 {_, rel_table, _} ->
                   if MapSet.member?(table_names, rel_table), do: [rel_table], else: []
 
@@ -209,7 +185,7 @@ defmodule DBML.Ecto.MigrationGenerator do
               end
 
             ref ->
-              rel_table = resolve.(ref[:related][:table])
+              rel_table = resolve.(ref.related.table)
               if MapSet.member?(table_names, rel_table), do: [rel_table], else: []
           end
         end)
@@ -220,13 +196,13 @@ defmodule DBML.Ecto.MigrationGenerator do
   end
 
   defp topological_sort(tables, deps) do
-    table_names = Enum.map(tables, & &1[:name])
+    table_names = Enum.map(tables, & &1.name)
 
     case topo_sort_iter(table_names, deps, []) do
       {:ok, sorted} ->
         {:ok,
          sorted
-         |> Enum.map(fn name -> Enum.find(tables, &(&1[:name] == name)) end)
+         |> Enum.map(fn name -> Enum.find(tables, &(&1.name == name)) end)
          |> Enum.reject(&is_nil/1)}
 
       :cycle ->
@@ -255,19 +231,26 @@ defmodule DBML.Ecto.MigrationGenerator do
     end
   end
 
-  defp generate_migration(table, _timestamp, repo_module, refs) do
-    table_name = table[:name]
+  defp migration_filename(timestamp, table_name) do
     table_snake = table_name |> String.replace(" ", "_") |> String.downcase()
-    definitions = table[:definitions]
-    columns = Keyword.get_values(definitions, :column)
-    indexes = Keyword.get(definitions, :indexes) || []
+    "#{timestamp}_create_#{table_snake}.exs"
+  end
 
-    col_names = Enum.map(columns, & &1[:name])
+  defp generate_migration(table, _timestamp, repo_module, refs) do
+    table_name = table.name
+    table_snake = table_name |> String.replace(" ", "_") |> String.downcase()
+    columns = table.fields || []
+    indexes = Map.get(table, :indexes) || []
+
+    col_names = Enum.map(columns, & &1.name)
     has_timestamps = "created_at" in col_names and "updated_at" in col_names
 
-    pk_cols = get_pk_columns(columns, indexes)
-    composite_pk = has_composite_pk(pk_cols)
-    {primary_key_opt, skip_id} = determine_pk_opt(columns, composite_pk, pk_cols)
+    pk_cols = get_pk_columns(columns)
+    # Check for composite PK in indexes as well
+    index_pk_cols = get_index_pk_columns(indexes)
+    all_pk_cols = if Enum.empty?(index_pk_cols), do: pk_cols, else: index_pk_cols
+    composite_pk = has_composite_pk(all_pk_cols)
+    {primary_key_opt, skip_id} = determine_pk_opt(columns, composite_pk, all_pk_cols)
 
     # For composite PKs, we don't skip the columns; they're added as regular fields
     # For standard single id PK, we skip it since Ecto provides it by default
@@ -281,7 +264,7 @@ defmodule DBML.Ecto.MigrationGenerator do
 
     column_lines = generate_column_lines(columns, table_name, skip_set, refs)
     index_lines = generate_index_lines(table_snake, indexes)
-    fk_index_lines = generate_fk_indexes(table_snake, columns, indexes, table_name, refs)
+    fk_index_lines = generate_fk_indexes(table_snake, columns, table_name, refs)
 
     create_table_opts = if primary_key_opt, do: ", #{primary_key_opt}", else: ""
 
@@ -304,27 +287,22 @@ defmodule DBML.Ecto.MigrationGenerator do
     Enum.join(lines, "\n")
   end
 
-  defp get_pk_columns(columns, indexes) do
-    col_pks =
-      columns
-      |> Enum.filter(fn col ->
-        settings = col[:settings] || []
-        Keyword.get(settings, :primary, false)
-      end)
-      |> Enum.map(& &1[:name])
+  defp get_pk_columns(columns) do
+    columns
+    |> Enum.filter(fn col ->
+      Map.get(col, :primary) == true
+    end)
+    |> Enum.map(& &1.name)
+  end
 
-    if col_pks != [] do
-      col_pks
-    else
-      # Check for composite PK in indexes
-      Enum.find_value(indexes, [], fn idx ->
-        if Keyword.get(idx[:options] || [], :primary, false) do
-          idx[:columns]
-        else
-          false
-        end
-      end)
-    end
+  defp get_index_pk_columns(indexes) do
+    Enum.find_value(indexes, [], fn idx ->
+      if Map.get(idx, :primary) do
+        idx.columns
+      else
+        false
+      end
+    end)
   end
 
   defp has_composite_pk(pk_cols) do
@@ -342,7 +320,7 @@ defmodule DBML.Ecto.MigrationGenerator do
   defp generate_column_lines(columns, table_name, skip_set, refs) do
     columns
     |> Enum.flat_map(fn col ->
-      col_name = col[:name]
+      col_name = col.name
 
       if MapSet.member?(skip_set, col_name) do
         []
@@ -358,35 +336,34 @@ defmodule DBML.Ecto.MigrationGenerator do
             ["      add :#{col_name_atom}, references(:#{related_table_snake}, column: :#{related_col})"]
 
           nil ->
-            col_type = col[:type]
+            col_type = col.type
             type_atom = map_type(col_type)
-            settings = col[:settings] || []
-            opts = build_column_opts(settings)
+            opts = build_column_opts(col)
             ["      add :#{col_name_atom}, #{type_atom}#{opts}"]
         end
       end
     end)
   end
 
-  defp build_column_opts(settings) do
+  defp build_column_opts(col) do
     opts = []
 
     opts =
-      if settings[:null] == false do
+      if Map.get(col, :null) == false do
         opts ++ ["null: false"]
       else
         opts
       end
 
     opts =
-      if settings[:unique] do
+      if Map.get(col, :unique) do
         opts ++ ["unique: true"]
       else
         opts
       end
 
     opts =
-      case settings[:default] do
+      case Map.get(col, :default) do
         nil ->
           opts
 
@@ -407,12 +384,12 @@ defmodule DBML.Ecto.MigrationGenerator do
     end
   end
 
-  defp generate_fk_indexes(table_snake, columns, indexes, table_name, refs) do
+  defp generate_fk_indexes(table_snake, columns, table_name, refs) do
     # Find all FK columns
     fk_cols =
       columns
       |> Enum.flat_map(fn col ->
-        col_name = col[:name]
+        col_name = col.name
         ref_key = {table_name, col_name}
 
         if Map.has_key?(refs, ref_key) do
@@ -422,51 +399,29 @@ defmodule DBML.Ecto.MigrationGenerator do
         end
       end)
 
-    # Check which columns already have indexes
-    indexed_cols = get_indexed_columns(indexes)
-
-    # Create indexes for FK columns not already indexed
+    # Create indexes for FK columns
     fk_cols
-    |> Enum.reject(fn col -> Enum.member?(indexed_cols, [col]) end)
     |> Enum.map(fn col -> "    create index(:#{table_snake}, [:#{col}])" end)
   end
 
   defp generate_index_lines(table_snake, indexes) do
     indexes
     |> Enum.flat_map(fn idx ->
-      cols = idx[:columns]
-      opts = idx[:options] || []
+      cols = idx.columns
 
       # Skip primary key indexes as they're handled via primary_key opt
-      if opts[:primary] do
+      if Map.get(idx, :primary) do
         []
       else
         cols_str = "[" <> Enum.join(Enum.map(cols, &":#{&1}"), ", ") <> "]"
 
-        if opts[:unique] do
-          ["    create unique_index(:#{table_snake}, #{cols_str}#{format_index_opts(opts)})"]
+        if Map.get(idx, :unique) do
+          ["    create unique_index(:#{table_snake}, #{cols_str})"]
         else
-          ["    create index(:#{table_snake}, #{cols_str}#{format_index_opts(opts)})"]
+          ["    create index(:#{table_snake}, #{cols_str})"]
         end
       end
     end)
-  end
-
-  defp format_index_opts(opts) do
-    extra_opts =
-      opts
-      |> Enum.reject(fn {k, _} -> k in [:unique, :primary] end)
-      |> Enum.map(fn {k, v} -> "#{k}: #{inspect(v)}" end)
-
-    if extra_opts == [] do
-      ""
-    else
-      ", " <> Enum.join(extra_opts, ", ")
-    end
-  end
-
-  defp get_indexed_columns(indexes) do
-    Enum.map(indexes, & &1[:columns])
   end
 
   defp map_type(type_str) do
