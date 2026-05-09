@@ -4,22 +4,126 @@ defmodule DBML.Ecto.MigrationGenerator do
   def generate(tokens, output_dir, repo_module, opts \\ []) do
     File.mkdir_p!(output_dir)
     base_timestamp = Keyword.get(opts, :base_timestamp, 20_000_101_000_000)
+    update = Keyword.get(opts, :update, false)
 
     alias_map = build_alias_map(tokens)
     refs = collect_refs(tokens, alias_map)
     tables = Keyword.get_values(tokens, :table)
     ordered_tables = order_tables_by_deps(tables, alias_map, refs)
 
-    ordered_tables
-    |> Enum.with_index(1)
-    |> Enum.map(fn {table, index} ->
-      timestamp = base_timestamp + index
-      content = generate_migration(table, timestamp, repo_module, refs)
-      filename = migration_filename(timestamp, table[:name])
+    # Pre-compute content for all tables
+    migrations_to_write =
+      ordered_tables
+      |> Enum.with_index(1)
+      |> Enum.map(fn {table, index} ->
+        table_snake = table[:name] |> String.replace(" ", "_") |> String.downcase()
+        content = generate_migration(table, base_timestamp + index, repo_module, refs)
+        {table_snake, table, index, content}
+      end)
+
+    if update do
+      write_migrations_with_update(migrations_to_write, output_dir, base_timestamp, repo_module, refs)
+    else
+      write_migrations_no_update(migrations_to_write, output_dir, base_timestamp)
+    end
+  end
+
+  defp write_migrations_no_update(migrations_to_write, output_dir, base_timestamp) do
+    # Pre-flight check: ensure no files exist
+    case Enum.with_index(migrations_to_write, 1)
+         |> Enum.find(fn {{table_snake, _, _index, _content}, seq} ->
+           path = Path.join(output_dir, "#{base_timestamp + seq}_create_#{table_snake}.exs")
+           File.exists?(path)
+         end) do
+      {{table_snake, _, _, _}, seq} ->
+        existing_path = Path.join(output_dir, "#{base_timestamp + seq}_create_#{table_snake}.exs")
+        {:error, "File already exists: #{existing_path}"}
+
+      nil ->
+        # All clear, write all files
+        paths =
+          migrations_to_write
+          |> Enum.with_index(1)
+          |> Enum.map(fn {{table_snake, _table, _index, content}, seq} ->
+            timestamp = base_timestamp + seq
+            filename = "#{timestamp}_create_#{table_snake}.exs"
+            path = Path.join(output_dir, filename)
+            File.write!(path, content)
+            path
+          end)
+
+        {:ok, paths}
+    end
+  end
+
+  defp write_migrations_with_update(migrations_to_write, output_dir, base_timestamp, _repo_module, _refs) do
+    existing_migrations = find_existing_migrations(output_dir)
+    max_ts = max_timestamp(output_dir, base_timestamp)
+    next_new_ts = max_ts + 1
+
+    {paths_written, _next_ts} =
+      migrations_to_write
+      |> Enum.with_index(1)
+      |> Enum.reduce({[], next_new_ts}, fn {{table_snake, _table, _index, content}, seq}, {paths, ts} ->
+        case Map.get(existing_migrations, table_snake) do
+          # File exists and content matches — skip
+          {_existing_path, ^content} ->
+            {paths, ts}
+
+          # File exists but content changed — write new migration
+          {_existing_path, _old_content} ->
+            filename = "#{ts}_create_#{table_snake}.exs"
+            path = Path.join(output_dir, filename)
+            File.write!(path, content)
+            {paths ++ [path], ts + 1}
+
+          # No existing file — write new migration
+          nil ->
+            timestamp = base_timestamp + seq
+            filename = "#{timestamp}_create_#{table_snake}.exs"
+            path = Path.join(output_dir, filename)
+            File.write!(path, content)
+            {paths ++ [path], ts}
+        end
+      end)
+
+    {:ok, paths_written}
+  end
+
+  defp find_existing_migrations(output_dir) do
+    output_dir
+    |> File.ls!()
+    |> Enum.filter(&String.match?(&1, ~r/^\d+_create_.+\.exs$/))
+    |> Enum.into(%{}, fn filename ->
       path = Path.join(output_dir, filename)
-      File.write!(path, content)
-      path
+      content = File.read!(path)
+      # Extract table name from filename like "20000101000001_create_users.exs"
+      # Pattern: NNNNNNNNNNNNNN_create_<table>.exs (14 digits + 8 chars for _create_)
+      table_snake =
+        filename
+        |> String.slice(22..-5//1)  # Skip "NNNNNNNNNNNNNN_create_" (22 chars) and ".exs" (4 chars)
+
+      {table_snake, {path, content}}
     end)
+  rescue
+    File.Error -> %{}
+  end
+
+  defp max_timestamp(output_dir, base_timestamp) do
+    output_dir
+    |> File.ls!()
+    |> Enum.filter(&String.match?(&1, ~r/^\d+_/))
+    |> Enum.map(fn filename ->
+      filename
+      |> String.slice(0..13)
+      |> String.to_integer()
+    end)
+    |> case do
+      [] -> base_timestamp
+      timestamps -> Enum.max(timestamps)
+    end
+  rescue
+    File.Error -> base_timestamp
   end
 
   defp build_alias_map(tokens) do
@@ -149,11 +253,6 @@ defmodule DBML.Ecto.MigrationGenerator do
         new_remaining = List.delete(remaining, next)
         topo_sort_iter(new_remaining, deps, [next | sorted])
     end
-  end
-
-  defp migration_filename(timestamp, table_name) do
-    table_snake = table_name |> String.replace(" ", "_") |> String.downcase()
-    "#{timestamp}_create_#{table_snake}.exs"
   end
 
   defp generate_migration(table, _timestamp, repo_module, refs) do

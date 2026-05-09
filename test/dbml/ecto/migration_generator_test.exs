@@ -3,6 +3,7 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
 
   setup do
     dir = Path.join(System.tmp_dir!(), "dbml_mig_test_#{:erlang.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf!(dir) end)
     {:ok, dir: dir}
   end
@@ -13,7 +14,7 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
       table orders { id int [pk] }
     """)
 
-    paths = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+    {:ok, paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
     assert length(paths) == 2
 
     assert Enum.any?(paths, &String.contains?(&1, "20000101000001_create_users.exs"))
@@ -25,7 +26,7 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
       table users { id int [pk] }
     """)
 
-    paths = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo", base_timestamp: 20_250_101_000_000)
+    {:ok, paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo", base_timestamp: 20_250_101_000_000)
     assert Enum.any?(paths, &String.contains?(&1, "20250101000001_create_users.exs"))
   end
 
@@ -183,7 +184,7 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
       }
     """)
 
-    paths = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+    {:ok, paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
 
     # countries should come before users
     countries_idx = Enum.find_index(paths, &String.contains?(&1, "create_countries"))
@@ -210,7 +211,7 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
       ref: orders.user_id > users.id
     """)
 
-    paths = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+    {:ok, paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
 
     # users should come before orders
     users_idx = Enum.find_index(paths, &String.contains?(&1, "create_users"))
@@ -337,7 +338,7 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
       }
     """)
 
-    paths = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+    {:ok, paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
 
     assert Enum.any?(paths, &String.contains?(&1, "create_user_accounts"))
 
@@ -376,7 +377,7 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
       }
     """)
 
-    paths = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+    {:ok, paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
 
     # Extract order from filenames
     path_order = Enum.map(paths, &Path.basename/1) |> Enum.sort()
@@ -409,10 +410,215 @@ defmodule DBML.Ecto.MigrationGeneratorTest do
       }
     """)
 
-    DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+    {:ok, _paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
     content = File.read!(Path.join(dir, "20000101000001_create_users.exs"))
 
     assert content =~ "add :email, :string, null: false, unique: true"
     assert content =~ "add :age, :integer, default: 18"
+  end
+
+  # New tests for :update option
+
+  test "error when file exists and update is false (default)", %{dir: dir} do
+    {:ok, tokens} = DBML.parse("""
+      table users {
+        id int [pk]
+        name varchar
+      }
+    """)
+
+    # Create a migration file manually
+    File.write!(Path.join(dir, "20000101000001_create_users.exs"), "old content")
+
+    # Try to generate without update flag (default update: false)
+    result = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+
+    # Should get an error, not overwrite
+    assert match?({:error, "File already exists: " <> _}, result)
+
+    # Verify the existing file was not modified
+    content = File.read!(Path.join(dir, "20000101000001_create_users.exs"))
+    assert content == "old content"
+  end
+
+  test "update: true with no existing files creates normally", %{dir: dir} do
+    {:ok, tokens} = DBML.parse("""
+      table users {
+        id int [pk]
+        name varchar
+      }
+    """)
+
+    {:ok, paths} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo", update: true)
+
+    # Should succeed and create file
+    assert length(paths) == 1
+    assert File.exists?(Path.join(dir, "20000101000001_create_users.exs"))
+
+    content = File.read!(Path.join(dir, "20000101000001_create_users.exs"))
+    assert content =~ "defmodule MyApp.Repo.Migrations.CreateUsers do"
+  end
+
+  test "update: true, schema unchanged skips file", %{dir: dir} do
+    {:ok, tokens} = DBML.parse("""
+      table users {
+        id int [pk]
+        email varchar
+      }
+    """)
+
+    # First generation
+    {:ok, paths_1} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo")
+    assert length(paths_1) == 1
+
+    original_content = File.read!(Path.join(dir, "20000101000001_create_users.exs"))
+    original_mtime = File.stat!(Path.join(dir, "20000101000001_create_users.exs")).mtime
+
+    # Wait a tiny bit to ensure different mtime if file is modified
+    Process.sleep(10)
+
+    # Generate again with same schema and update: true
+    {:ok, paths_2} = DBML.Ecto.MigrationGenerator.generate(tokens, dir, "MyApp.Repo", update: true)
+
+    # Should return empty list (no new files written)
+    assert paths_2 == []
+
+    # Original file should be untouched
+    content = File.read!(Path.join(dir, "20000101000001_create_users.exs"))
+    assert content == original_content
+
+    stat = File.stat!(Path.join(dir, "20000101000001_create_users.exs"))
+    assert stat.mtime == original_mtime
+  end
+
+  test "update: true, schema changed creates new migration with higher timestamp", %{dir: dir} do
+    schema_v1 = """
+      table users {
+        id int [pk]
+        name varchar
+      }
+    """
+
+    schema_v2 = """
+      table users {
+        id int [pk]
+        name varchar
+        email varchar
+      }
+    """
+
+    # First generation
+    {:ok, tokens_v1} = DBML.parse(schema_v1)
+    {:ok, paths_1} = DBML.Ecto.MigrationGenerator.generate(tokens_v1, dir, "MyApp.Repo")
+    assert length(paths_1) == 1
+
+    original_file = Path.join(dir, "20000101000001_create_users.exs")
+    original_content = File.read!(original_file)
+
+    # Generate with changed schema and update: true
+    {:ok, tokens_v2} = DBML.parse(schema_v2)
+    {:ok, paths_2} = DBML.Ecto.MigrationGenerator.generate(tokens_v2, dir, "MyApp.Repo", update: true)
+
+    # Should create one new file with higher timestamp
+    assert length(paths_2) == 1
+    new_file = hd(paths_2)
+    assert String.contains?(new_file, "20000101000002_create_users.exs")
+
+    # Original file should be untouched
+    assert File.read!(original_file) == original_content
+
+    # New file should have the email field
+    new_content = File.read!(new_file)
+    assert new_content =~ "add :email, :string"
+  end
+
+  test "update: true, new table added creates migration only for new table", %{dir: dir} do
+    schema_v1 = """
+      table users {
+        id int [pk]
+        name varchar
+      }
+    """
+
+    schema_v2 = """
+      table users {
+        id int [pk]
+        name varchar
+      }
+
+      table posts {
+        id int [pk]
+        title varchar
+      }
+    """
+
+    # First generation
+    {:ok, tokens_v1} = DBML.parse(schema_v1)
+    {:ok, paths_1} = DBML.Ecto.MigrationGenerator.generate(tokens_v1, dir, "MyApp.Repo")
+    assert length(paths_1) == 1
+
+    users_file = Path.join(dir, "20000101000001_create_users.exs")
+    users_original = File.read!(users_file)
+
+    # Generate with new table and update: true
+    {:ok, tokens_v2} = DBML.parse(schema_v2)
+    {:ok, paths_2} = DBML.Ecto.MigrationGenerator.generate(tokens_v2, dir, "MyApp.Repo", update: true)
+
+    # Should create only one new file (for posts)
+    assert length(paths_2) == 1
+    assert String.contains?(hd(paths_2), "20000101000002_create_posts.exs")
+
+    # Users file should be untouched
+    assert File.read!(users_file) == users_original
+
+    # New posts file should exist
+    posts_file = Path.join(dir, "20000101000002_create_posts.exs")
+    assert File.exists?(posts_file)
+    assert File.read!(posts_file) =~ "defmodule MyApp.Repo.Migrations.CreatePosts do"
+  end
+
+  test "public API with update: true", %{dir: dir} do
+    {:ok, tokens} = DBML.parse("""
+      table users {
+        id int [pk]
+        name varchar
+      }
+    """)
+
+    # Create a migration file manually
+    File.write!(Path.join(dir, "20000101000001_create_users.exs"), "old content")
+
+    # Generate via public API with update: true
+    {:ok, paths} = DBML.generate_ecto_migrations(tokens, dir, "MyApp.Repo", update: true)
+
+    # Should succeed (no-op since content is different and will create new)
+    assert length(paths) == 1
+
+    # New file should be created
+    new_file = Path.join(dir, "20000101000002_create_users.exs")
+    assert File.exists?(new_file)
+
+    # Old file should be untouched
+    assert File.read!(Path.join(dir, "20000101000001_create_users.exs")) == "old content"
+  end
+
+  test "public API error when file exists and update is false (default)", %{dir: dir} do
+    {:ok, tokens} = DBML.parse("""
+      table users {
+        id int [pk]
+      }
+    """)
+
+    # Create a migration file manually
+    File.write!(Path.join(dir, "20000101000001_create_users.exs"), "old content")
+
+    # Try via public API with default update: false
+    result = DBML.generate_ecto_migrations(tokens, dir, "MyApp.Repo")
+
+    # Should get an error
+    assert match?({:error, "File already exists: " <> _}, result)
+
+    # File should be untouched
+    assert File.read!(Path.join(dir, "20000101000001_create_users.exs")) == "old content"
   end
 end
