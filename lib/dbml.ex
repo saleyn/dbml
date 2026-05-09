@@ -98,7 +98,6 @@ defmodule DBML do
       DBML.Ecto.DBMLWriter.write(tables, output_path, opts)
     end
   end
-
   defp extract_project_name(tokens) do
     case Keyword.get(tokens, :project) do
       nil -> nil
