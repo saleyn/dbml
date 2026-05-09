@@ -7,12 +7,13 @@
 A complete Elixir implementation for parsing [Database Markup Language (DBML)](https://dbml.dbdiagram.io/) schemas and generating Ecto schema files and Ecto migrations automatically.
 
 **Features:**
-- ✅ Full DBML syntax parser using NimbleParsec
-- ✅ Generate Ecto schema files from DBML definitions
-- ✅ Generate Ecto migration files with intelligent change detection
-- ✅ Incremental updates: only regenerate changed schemas and migrations
-- ✅ Type mapping, relationships (belongs_to), enums, indexes, constraints
-- ✅ Zero-friction integration with Phoenix/Ecto projects
+- Full DBML syntax parser using NimbleParsec
+- Generate Ecto schema files from DBML definitions
+- Generate Ecto migration files with intelligent change detection
+- Generate DBML from existing Ecto schema files (reverse operation)
+- Incremental updates: only regenerate changed schemas and migrations
+- Type mapping, relationships (belongs_to), enums, indexes, constraints
+- Zero-friction integration with Phoenix/Ecto projects
 
 ## Table of Contents
 
@@ -21,6 +22,7 @@ A complete Elixir implementation for parsing [Database Markup Language (DBML)](h
 - [Parsing DBML](#parsing-dbml)
 - [Generating Ecto Schemas](#generating-ecto-schemas)
 - [Generating Ecto Migrations](#generating-ecto-migrations)
+- [Generating DBML from Ecto Schemas](#generating-dbml-from-ecto-schemas)
 - [Type Mapping](#type-mapping)
 - [Examples](#examples)
 - [API Reference](#api-reference)
@@ -334,6 +336,170 @@ table posts {
 
 ---
 
+## Generating DBML from Ecto Schemas
+
+Generate a DBML schema file from existing Ecto schema files. This is the reverse operation: instead of parsing DBML and generating schemas, read Ecto schemas and produce DBML.
+
+### Basic usage
+
+```elixir
+# Generate DBML from all .ex files in a directory
+{:ok, output_path} = DBML.schemas_to_dbml(
+  "lib/my_app/schema",
+  "schema.dbml"
+)
+```
+
+### With options
+
+```elixir
+{:ok, output_path} = DBML.schemas_to_dbml(
+  "lib/my_app/schema",
+  "schema.dbml",
+  project_name: "MyApp",
+  database_type: "PostgreSQL"
+)
+```
+
+### Options
+
+#### `:project_name` (string, optional)
+
+Adds a project block to the generated DBML with metadata.
+
+```elixir
+{:ok, output_path} = DBML.schemas_to_dbml(
+  "lib/my_app/schema",
+  "schema.dbml",
+  project_name: "MyApp"
+)
+
+# Generates:
+# project MyApp {
+#   database_type: "PostgreSQL"
+# }
+```
+
+#### `:database_type` (string, default: `"PostgreSQL"`)
+
+Sets the database type in the project block.
+
+```elixir
+{:ok, output_path} = DBML.schemas_to_dbml(
+  "lib/my_app/schema",
+  "schema.dbml",
+  project_name: "MyApp",
+  database_type: "MySQL"
+)
+```
+
+### Supported Ecto features
+
+The generator reads Ecto schemas and extracts:
+
+- **Primary keys:** standard `id int [pk]`, custom PKs with `@primary_key`, autoincrement
+- **No primary key:** `@primary_key false`
+- **Field types:** full mapping of Ecto types to DBML (integer, string, boolean, float, decimal, date, datetime, uuid, jsonb, etc.)
+- **Field constraints:** `null: false`, `unique: true`, default values
+- **Ecto.Enum fields:** extracted with all enum values
+- **Timestamps:** `created_at` and `updated_at` columns
+- **Associations:** `belongs_to` generates foreign key columns and `ref:` statements
+- **Custom foreign keys:** respects `foreign_key:` options in associations
+- **Type back-mapping:** Ecto atom types (`:integer`, `:string`, etc.) → DBML strings (`"int"`, `"varchar"`, etc.)
+
+### Example
+
+**Input schema files:**
+
+```elixir
+# lib/my_app/schema/user.ex
+defmodule MyApp.Schema.User do
+  use Ecto.Schema
+
+  schema "users" do
+    field :email, :string, null: false, unique: true
+    field :status, Ecto.Enum, values: [:active, :inactive, :pending]
+    timestamps()
+  end
+end
+
+# lib/my_app/schema/post.ex
+defmodule MyApp.Schema.Post do
+  use Ecto.Schema
+
+  schema "posts" do
+    field :title, :string, null: false
+    field :content, :string
+    belongs_to :user, MyApp.Schema.User
+    timestamps()
+  end
+end
+```
+
+**Generation:**
+
+```elixir
+{:ok, path} = DBML.schemas_to_dbml(
+  "lib/my_app/schema",
+  "schema.dbml",
+  project_name: "MyApp"
+)
+```
+
+**Output DBML:**
+
+```dbml
+project MyApp {
+  database_type: "PostgreSQL"
+}
+
+enum status {
+  active
+  inactive
+  pending
+}
+
+table users {
+  id int [pk]
+  email varchar [not null, unique]
+  status status
+  created_at timestamp
+  updated_at timestamp
+}
+
+table posts {
+  id int [pk]
+  title varchar [not null]
+  content varchar
+  user_id int [ref: > users.id]
+  created_at timestamp
+  updated_at timestamp
+}
+
+ref: posts.user_id > users.id
+```
+
+### Return value
+
+- **Success:** `{:ok, output_path}` — Path to the written `.dbml` file
+- **Error:** `{:error, reason}` — File I/O or parsing error
+
+### Use cases
+
+**Visualize existing schemas:**
+Generate DBML from production Ecto schemas and visualize them in [dbdiagram.io](https://dbml.dbdiagram.io/home).
+
+**Document schemas:**
+Keep a DBML representation of your database schema in version control.
+
+**Migrate between tools:**
+Convert Ecto schemas to DBML, then use DBML tools for schema design and visualization.
+
+**Round-trip testing:**
+Parse DBML → generate schemas → read schemas → generate DBML to verify round-trip fidelity.
+
+---
+
 ## Type Mapping
 
 ### DBML to Ecto Type Mapping
@@ -607,6 +773,34 @@ Generate Ecto migration files from parsed DBML tokens.
 )
 ```
 
+#### `schemas_to_dbml(input_dir, output_path, opts) :: {:ok, output_path} | {:error, reason}`
+
+Generate a DBML schema file from existing Ecto schema files.
+
+Reads all `*.ex` files in `input_dir` that contain `use Ecto.Schema`, parses their structure, and writes a single `.dbml` file to `output_path`.
+
+**Parameters:**
+- `input_dir` (string) — Directory containing Ecto schema `.ex` files
+- `output_path` (string) — Path to write the generated `.dbml` file
+- `opts` (keyword list, optional) — Generation options
+
+**Options:**
+- `:project_name` (string, optional) — Name for the DBML project block
+- `:database_type` (string, default: `"PostgreSQL"`) — Database type for project block
+
+**Returns:**
+- `{:ok, output_path}` — Path to the written `.dbml` file
+- `{:error, reason}` — File I/O or parsing error
+
+```elixir
+{:ok, path} = DBML.schemas_to_dbml(
+  "lib/my_app/schema",
+  "schema.dbml",
+  project_name: "MyApp",
+  database_type: "PostgreSQL"
+)
+```
+
 ---
 
 ## DBML Syntax Reference
@@ -706,6 +900,34 @@ DBML.generate_ecto_migrations(
 )
 
 # Review and run new migrations
+mix ecto.migrate
+```
+
+### For visualizing existing schemas
+
+```bash
+# 1. Generate DBML from your existing Ecto schemas
+iex> DBML.schemas_to_dbml("lib/my_app/schema", "priv/schema.dbml", project_name: "MyApp")
+
+# 2. View it online at https://dbml.dbdiagram.io/home
+# Copy the contents of priv/schema.dbml and paste it into the editor
+```
+
+### Migrating from Ecto schemas to DBML-first workflow
+
+```bash
+# 1. Visualize current schemas
+iex> DBML.schemas_to_dbml("lib/my_app/schema", "schema.dbml", project_name: "MyApp")
+
+# 2. Use the DBML as the source of truth going forward
+# Edit schema.dbml with new changes
+
+# 3. Generate schemas and migrations from DBML
+iex> {:ok, tokens} = DBML.parse_file("schema.dbml")
+iex> DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", namespace: "MyApp", update: true)
+iex> DBML.generate_ecto_migrations(tokens, "priv/repo/migrations", "MyApp.Repo", update: true)
+
+# 4. Run migrations
 mix ecto.migrate
 ```
 
