@@ -98,7 +98,7 @@ jobs:
         run: mix docs
 
       - name: Check that docs build successfully
-        run: test -d doc && echo "✅ Documentation generated successfully"
+        run: test -d doc && echo "==> Documentation generated successfully"
 
   create-tag:
     name: Create Tag if Version Changed
@@ -145,7 +145,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$VERSION"
-          # Use RELEASE_PAT instead of GITHUB_TOKEN to trigger workflow runs on tag push.
-          # The default GITHUB_TOKEN cannot trigger workflows for security reasons, so we need
-          # a Personal Access Token with 'repo' and 'workflow' scopes to enable the release workflow.
           git push https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/${{ github.repository }}.git "$VERSION"
+
+      - name: Trigger release workflow
+        if: steps.should_create_tag.outputs.create_tag == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.RELEASE_PAT }}
+          script: |
+            # Explicitly trigger the release workflow via the GitHub API.
+            # GitHub Actions has a limitation: workflows triggered by other workflows don't
+            # automatically trigger additional workflows, even with a PAT. We use the GitHub API
+            # to explicitly dispatch the release workflow on the newly created tag.
+            const version = "${{ steps.project_version.outputs.version }}";
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yaml',
+              ref: version,
+              inputs: {}
+            });
