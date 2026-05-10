@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ["1.17", "1.18", "1.19"]
+        elixir: ["1.18", "1.19"]
         otp:    ["27", "28"]
 
     steps:
@@ -24,6 +24,9 @@ jobs:
         with:
           elixir-version: ${{ matrix.elixir }}
           otp-version: ${{ matrix.otp }}
+
+      - name: Update Hex
+        run: mix local.hex --force
 
       - name: Cache deps
         uses: actions/cache@v4
@@ -66,6 +69,9 @@ jobs:
           otp-version: "28"
           cache-key: v1
 
+      - name: Update Hex
+        run: mix local.hex --force
+
       - name: Install dependencies
         run: mix deps.get
 
@@ -87,6 +93,9 @@ jobs:
           elixir-version: "1.19"
           otp-version: "28"
           cache-key: v1
+
+      - name: Update Hex
+        run: mix local.hex --force
 
       - name: Install dependencies
         run: mix deps.get
