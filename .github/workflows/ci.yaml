@@ -144,4 +144,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$VERSION"
-          git push origin "$VERSION"
+          # Use RELEASE_PAT instead of GITHUB_TOKEN to trigger workflow runs on tag push.
+          # The default GITHUB_TOKEN cannot trigger workflows for security reasons, so we need
+          # a Personal Access Token with 'repo' and 'workflow' scopes to enable the release workflow.
+          git push https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/${{ github.repository }}.git "$VERSION"
