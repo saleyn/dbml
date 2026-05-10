@@ -32,7 +32,12 @@ jobs:
           otp-version: latest
 
       - name: Install dependencies
-        run: mix deps.get
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 10
+          retry_wait_seconds: 5
+          command: mix deps.get
 
       - name: Build escript
         run: mix escript.build
@@ -115,7 +120,11 @@ jobs:
 
       - name: Install dependencies
         if: steps.should_publish.outputs.publish == 'true'
-        run: mix deps.get
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: mix deps.get
 
       - name: Publish to Hex.pm
         if: steps.should_publish.outputs.publish == 'true'

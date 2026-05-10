@@ -43,7 +43,12 @@ jobs:
           restore-keys: build-${{ matrix.elixir }}-${{ matrix.otp }}-
 
       - name: Install dependencies
-        run: mix deps.get
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 10
+          retry_wait_seconds: 5
+          command: mix deps.get
 
       - name: Run tests
         run: mix test
