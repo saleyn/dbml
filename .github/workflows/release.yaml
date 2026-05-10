@@ -19,8 +19,8 @@ jobs:
       - name: Setup Elixir
         uses: erlef/setup-elixir@v1
         with:
-          elixir-version: "1.19"
-          otp-version: "28"
+          elixir-version: latest
+          otp-version: latest
           cache-key: v1
 
       - name: Install dependencies
@@ -71,18 +71,47 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current tag version
+        id: current_version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Check if tag is greater than max remote tag
+        id: should_publish
+        run: |
+          CURRENT_TAG="${{ steps.current_version.outputs.version }}"
+          MAX_TAG=$(git tag -l "*.*.*" | sort -V | tail -1)
+
+          if [ -z "$MAX_TAG" ]; then
+            echo "publish=true" >> $GITHUB_OUTPUT
+            echo "First release: $CURRENT_TAG"
+          else
+            # Compare versions: if CURRENT_TAG > MAX_TAG, publish
+            if [ "$(printf '%s\n' "$MAX_TAG" "$CURRENT_TAG" | sort -V | tail -1)" = "$CURRENT_TAG" ] && [ "$MAX_TAG" != "$CURRENT_TAG" ]; then
+              echo "publish=true" >> $GITHUB_OUTPUT
+              echo "Current tag $CURRENT_TAG is greater than max tag $MAX_TAG"
+            else
+              echo "publish=false" >> $GITHUB_OUTPUT
+              echo "Current tag $CURRENT_TAG is not greater than max tag $MAX_TAG, skipping publish"
+            fi
+          fi
 
       - name: Setup Elixir
+        if: steps.should_publish.outputs.publish == 'true'
         uses: erlef/setup-elixir@v1
         with:
-          elixir-version: "1.19"
-          otp-version: "28"
+          elixir-version: latest
+          otp-version: latest
           cache-key: v1
 
       - name: Install dependencies
+        if: steps.should_publish.outputs.publish == 'true'
         run: mix deps.get
 
       - name: Publish to Hex.pm
+        if: steps.should_publish.outputs.publish == 'true'
         run: |
           set +e
           output=$(mix hex.publish --yes 2>&1)
@@ -99,6 +128,7 @@ jobs:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
 
       - name: Retire prior version
+        if: steps.should_publish.outputs.publish == 'true'
         run: |
           set +e
           APP=$(sed -nE '/app:/{s/.*app:\s*:([a-z_]+).*/\1/p; q}' mix.exs)

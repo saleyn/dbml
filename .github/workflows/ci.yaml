@@ -99,3 +99,49 @@ jobs:
 
       - name: Check that docs build successfully
         run: test -d doc && echo "✅ Documentation generated successfully"
+
+  create-tag:
+    name: Create Tag if Version Changed
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get project version
+        id: project_version
+        run: |
+          VERSION=$(sed -nE 's/.*version:\s*"([^"]+)".*/\1/p' mix.exs | head -1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Project version: $VERSION"
+
+      - name: Check if tag should be created
+        id: should_create_tag
+        run: |
+          PROJECT_VERSION="${{ steps.project_version.outputs.version }}"
+          MAX_TAG=$(git tag -l "*.*.*" | sort -V | tail -1)
+
+          if [ -z "$MAX_TAG" ]; then
+            echo "create_tag=true" >> $GITHUB_OUTPUT
+            echo "First tag: $PROJECT_VERSION"
+          else
+            if [ "$(printf '%s\n' "$MAX_TAG" "$PROJECT_VERSION" | sort -V | tail -1)" = "$PROJECT_VERSION" ] && [ "$MAX_TAG" != "$PROJECT_VERSION" ]; then
+              echo "create_tag=true" >> $GITHUB_OUTPUT
+              echo "Project version $PROJECT_VERSION is greater than max tag $MAX_TAG, creating tag"
+            else
+              echo "create_tag=false" >> $GITHUB_OUTPUT
+              echo "Project version $PROJECT_VERSION is not greater than max tag $MAX_TAG, skipping tag creation"
+            fi
+          fi
+
+      - name: Create and push tag
+        if: steps.should_create_tag.outputs.create_tag == 'true'
+        run: |
+          VERSION="${{ steps.project_version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
