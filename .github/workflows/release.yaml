@@ -83,6 +83,17 @@ jobs:
         run: mix deps.get
 
       - name: Publish to Hex.pm
-        run: mix hex.publish --yes
+        run: |
+          set +e
+          output=$(mix hex.publish --yes 2>&1)
+          exit_code=$?
+          echo "$output"
+
+          if [ $exit_code -ne 0 ] && echo "$output" | grep -q "must include the --replace flag"; then
+            echo "Package already exists, retrying with --replace flag..."
+            mix hex.publish --yes --replace
+          else
+            exit $exit_code
+          fi
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
