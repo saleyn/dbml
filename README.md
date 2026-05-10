@@ -1,6 +1,6 @@
 # DBML — Elixir Parser and Code Generator
 
-[![build](https://github.com/saleyn/dbml/actions/workflows/ci.yml/badge.svg)](https://github.com/saleyn/dbml/actions/workflows/ci.yml)
+[![build](https://github.com/saleyn/dbml/actions/workflows/ci.yaml/badge.svg)](https://github.com/saleyn/dbml/actions/workflows/ci.yaml)
 [![Hex.pm](https://img.shields.io/hexpm/v/dbml.svg)](https://hex.pm/packages/dbml)
 [![Hex.pm](https://img.shields.io/hexpm/dt/dbml.svg)](https://hex.pm/packages/dbml)
 
@@ -72,8 +72,8 @@ DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", namespace: "MyApp.Schema
 
 ```elixir
 DBML.generate_ecto_migrations(
-  tokens, 
-  "priv/repo/migrations", 
+  tokens,
+  "priv/repo/migrations",
   "MyApp.Repo"
 )
 # Output: priv/repo/migrations/20000101000001_create_users.exs, ...
@@ -260,7 +260,7 @@ Control behavior when schema files already exist.
 
 ```elixir
 # update: false (default) — error if any file exists
-{:error, "File already exists: lib/my_app/schema/users.ex"} = 
+{:error, "File already exists: lib/my_app/schema/users.ex"} =
   DBML.generate_ecto_schemas(tokens, "lib/my_app/schema")
 
 # update: true — overwrite existing files
@@ -672,7 +672,7 @@ table posts {
   published_at datetime
   created_at timestamp
   updated_at timestamp
-  
+
   indexes {
     (user_id, status)
     published_at [type: btree]
@@ -916,9 +916,9 @@ table users as U {
   status status_enum [default: 'active']
   created_at timestamp
   updated_at timestamp
-  
+
   note: "User accounts table"
-  
+
   indexes {
     email [unique]
     (status, created_at)
@@ -930,7 +930,7 @@ table posts {
   user_id int [ref: > U.id, not null]
   title varchar [not null]
   content text
-  
+
   indexes {
     user_id
   }
