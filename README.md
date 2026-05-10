@@ -14,11 +14,13 @@ A complete Elixir implementation for parsing [Database Markup Language (DBML)](h
 - Incremental updates: only regenerate changed schemas and migrations
 - Type mapping, relationships (belongs_to), enums, indexes, constraints
 - Zero-friction integration with Phoenix/Ecto projects
+- **CLI tools:** Standalone `dbml` escript and Mix tasks for command-line usage
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [CLI Usage (Escript & Mix Tasks)](#cli-usage-escript--mix-tasks)
 - [Parsing DBML](#parsing-dbml)
 - [Generating Ecto Schemas](#generating-ecto-schemas)
 - [Generating Ecto Migrations](#generating-ecto-migrations)
@@ -75,6 +77,92 @@ DBML.generate_ecto_migrations(
   "MyApp.Repo"
 )
 # Output: priv/repo/migrations/20000101000001_create_users.exs, ...
+```
+
+---
+
+## CLI Usage (Escript & Mix Tasks)
+
+The DBML library includes both a standalone escript binary and Mix tasks for convenient command-line usage.
+
+### Building the escript
+
+```bash
+mix escript.build
+# Produces: ./dbml (standalone executable)
+```
+
+### Using the `dbml` escript
+
+```bash
+# Generate Ecto schemas from DBML
+./dbml schemas schema.dbml -o lib/my_app/schema --namespace MyApp.Schema
+
+# Generate Ecto migrations from DBML
+./dbml migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo
+
+# Generate DBML from existing Ecto schemas
+./dbml file lib/my_app/schema -o schema.dbml --project-name MyApp
+
+# Show help
+./dbml help
+./dbml schemas --help
+./dbml migrations --help
+./dbml file --help
+```
+
+### Using Mix tasks
+
+The same functionality is available as Mix tasks for use during development:
+
+```bash
+# Generate Ecto schemas from DBML
+mix dbml.schemas schema.dbml -o lib/my_app/schema --namespace MyApp.Schema
+
+# Generate Ecto migrations from DBML
+mix dbml.migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo
+
+# Generate DBML from existing Ecto schemas
+mix dbml.file lib/my_app/schema -o schema.dbml --project-name MyApp
+
+# Show help for each task
+mix help dbml.schemas
+mix help dbml.migrations
+mix help dbml.file
+```
+
+### Escript options
+
+#### `dbml schemas <DBML_FILE> [OPTIONS]`
+
+Generate Ecto schema files from a DBML schema.
+
+```
+-o, --output-dir DIR         Output directory for .ex files (required)
+-n, --namespace MODULE       Module namespace prefix (optional)
+--singularize true|false     Singularize table names (default: true)
+--update true|false          Allow overwriting existing files (default: false)
+```
+
+#### `dbml migrations <DBML_FILE> [OPTIONS]`
+
+Generate Ecto migration files from a DBML schema.
+
+```
+-o, --output-dir DIR         Output directory for migration files (required)
+-r, --repo MODULE            Repo module name (required)
+--base-timestamp TIMESTAMP   Base timestamp for migrations (default: 20000101000000)
+--update true|false          Allow incremental updates (default: false)
+```
+
+#### `dbml file <SCHEMAS_DIR> [OPTIONS]`
+
+Generate a DBML file from existing Ecto schema files (reverse operation).
+
+```
+-o, --output FILE            Output path for the .dbml file (required)
+--project-name NAME          Project name for DBML header (optional)
+--database-type TYPE         Database type (default: PostgreSQL)
 ```
 
 ---
@@ -855,7 +943,7 @@ ref: users.id < posts.user_id [comment: "One user has many posts"]
 
 ## Common Use Cases
 
-### For a new Phoenix project
+### For a new Phoenix project (using CLI)
 
 ```bash
 # 1. Create your DBML schema
@@ -868,18 +956,62 @@ table users {
 }
 EOF
 
-# 2. Generate migrations
-iex> {:ok, tokens} = DBML.parse_file("priv/schema.dbml")
-iex> DBML.generate_ecto_migrations(tokens, "priv/repo/migrations", "MyApp.Repo")
+# 2. Build the escript (or use mix tasks)
+mix escript.build
 
-# 3. Generate schemas
-iex> DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", namespace: "MyApp")
+# 3. Generate migrations
+./dbml migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo
 
-# 4. Run migrations
+# 4. Generate schemas
+./dbml schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp
+
+# 5. Run migrations
 mix ecto.migrate
 ```
 
-### For an existing project
+Alternatively, use Mix tasks:
+```bash
+mix dbml.migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo
+mix dbml.schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp
+mix ecto.migrate
+```
+
+### For a new Phoenix project (using Elixir)
+
+```bash
+# 1. Create your DBML schema (same as above)
+
+# 2. In iex:
+iex> {:ok, tokens} = DBML.parse_file("priv/schema.dbml")
+iex> DBML.generate_ecto_migrations(tokens, "priv/repo/migrations", "MyApp.Repo")
+iex> DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", namespace: "MyApp")
+
+# 3. Run migrations
+mix ecto.migrate
+```
+
+### For an existing project (using CLI)
+
+```bash
+# 1. Edit your DBML schema
+# vim priv/schema.dbml
+
+# 2. Regenerate using the escript (or mix tasks)
+./dbml schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+./dbml migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+
+# 3. Review and run new migrations
+mix ecto.migrate
+```
+
+Using Mix tasks:
+```bash
+mix dbml.schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+mix dbml.migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+mix ecto.migrate
+```
+
+### For an existing project (using Elixir)
 
 ```elixir
 # Update DBML, then regenerate:
@@ -903,29 +1035,70 @@ DBML.generate_ecto_migrations(
 mix ecto.migrate
 ```
 
-### For visualizing existing schemas
+### For visualizing existing schemas (using CLI)
 
 ```bash
 # 1. Generate DBML from your existing Ecto schemas
-iex> DBML.schemas_to_dbml("lib/my_app/schema", "priv/schema.dbml", project_name: "MyApp")
+./dbml file lib/my_app/schema -o priv/schema.dbml --project-name MyApp
 
 # 2. View it online at https://dbml.dbdiagram.io/home
 # Copy the contents of priv/schema.dbml and paste it into the editor
 ```
 
-### Migrating from Ecto schemas to DBML-first workflow
+Or using Mix task:
+```bash
+mix dbml.file lib/my_app/schema -o priv/schema.dbml --project-name MyApp
+```
+
+### For visualizing existing schemas (using Elixir)
+
+```elixir
+# Generate DBML from your existing Ecto schemas
+{:ok, path} = DBML.schemas_to_dbml("lib/my_app/schema", "priv/schema.dbml", project_name: "MyApp")
+
+# View it online at https://dbml.dbdiagram.io/home
+# Copy the contents of priv/schema.dbml and paste it into the editor
+```
+
+### Migrating from Ecto schemas to DBML-first workflow (using CLI)
 
 ```bash
 # 1. Visualize current schemas
-iex> DBML.schemas_to_dbml("lib/my_app/schema", "schema.dbml", project_name: "MyApp")
+./dbml file lib/my_app/schema -o schema.dbml --project-name MyApp
 
 # 2. Use the DBML as the source of truth going forward
 # Edit schema.dbml with new changes
 
 # 3. Generate schemas and migrations from DBML
-iex> {:ok, tokens} = DBML.parse_file("schema.dbml")
-iex> DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", namespace: "MyApp", update: true)
-iex> DBML.generate_ecto_migrations(tokens, "priv/repo/migrations", "MyApp.Repo", update: true)
+./dbml schemas schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+./dbml migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+
+# 4. Run migrations
+mix ecto.migrate
+```
+
+Or using Mix tasks:
+```bash
+mix dbml.file lib/my_app/schema -o schema.dbml --project-name MyApp
+# Edit schema.dbml...
+mix dbml.schemas schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+mix dbml.migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+mix ecto.migrate
+```
+
+### Migrating from Ecto schemas to DBML-first workflow (using Elixir)
+
+```elixir
+# 1. Visualize current schemas
+{:ok, _path} = DBML.schemas_to_dbml("lib/my_app/schema", "schema.dbml", project_name: "MyApp")
+
+# 2. Use the DBML as the source of truth going forward
+# Edit schema.dbml with new changes
+
+# 3. Generate schemas and migrations from DBML
+{:ok, tokens} = DBML.parse_file("schema.dbml")
+DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", namespace: "MyApp", update: true)
+DBML.generate_ecto_migrations(tokens, "priv/repo/migrations", "MyApp.Repo", update: true)
 
 # 4. Run migrations
 mix ecto.migrate
