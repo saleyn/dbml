@@ -94,6 +94,14 @@ jobs:
       - name: Check if tag is greater than max remote tag
         id: should_publish
         run: |
+          # If triggered via workflow_dispatch by the ci.yaml action, always
+          # publish (already verified by CI)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "publish=true" >> $GITHUB_OUTPUT
+            echo "Triggered via workflow_dispatch, publishing"
+            exit 0
+          fi
+
           CURRENT_TAG="${{ steps.current_version.outputs.version }}"
           MAX_TAG=$(git tag -l "*.*.*" | sort -V | tail -1)
 
