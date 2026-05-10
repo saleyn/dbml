@@ -155,8 +155,8 @@ jobs:
           script: |
             // Explicitly trigger the release workflow via the GitHub API.
             // GitHub Actions has a limitation: workflows triggered by other workflows don't
-            // automatically trigger additional workflows, even with a PAT. We use the GitHub API
-            // to explicitly dispatch the release workflow on the newly created tag.
+            // automatically trigger additional workflows, even with a PAT. The release.yaml
+            // workflow has workflow_dispatch enabled to allow manual triggering via the API.
             const version = "${{ steps.project_version.outputs.version }}";
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,

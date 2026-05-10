@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "*.*.*"
+  # Allow manual triggering of the release workflow via GitHub API.
+  # The CI workflow uses this to explicitly dispatch the release when a new tag is created,
+  # since workflows triggered by other workflows don't automatically trigger downstream workflows.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (optional, uses current ref if not provided)"
+        required: false
+        default: ""
 
 jobs:
   create-release:
