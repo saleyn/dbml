@@ -71,11 +71,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Elixir and OTP versions
+        run: |
+          echo "Elixir: ${{ steps.latest.outputs.elixir_latest }}"
+          echo "OTP: ${{ steps.latest.outputs.otp_latest }}"
+
       - name: Setup Elixir
         uses: erlef/setup-elixir@v1
         with:
           elixir-version: "${{ steps.latest.outputs.elixir_latest }}"
-          otp-version:    "${{ steps.latest.outputs.otp_latest }}"
+          otp-version: "${{ steps.latest.outputs.otp_latest }}"
           #cache-key: v1
 
       - name: Update Hex
@@ -108,11 +113,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Elixir and OTP versions
+        run: |
+          echo "Elixir: ${{ steps.latest.outputs.elixir_latest }}"
+          echo "OTP: ${{ steps.latest.outputs.otp_latest }}"
+
       - name: Setup Elixir
         uses: erlef/setup-elixir@v1
         with:
           elixir-version: "${{ steps.latest.outputs.elixir_latest }}"
-          otp-version:    "${{ steps.latest.outputs.otp_latest }}"
+          otp-version: "${{ steps.latest.outputs.otp_latest }}"
           #cache-key: v1
 
       - name: Update Hex
