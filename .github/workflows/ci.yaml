@@ -48,9 +48,6 @@ jobs:
       - name: Run tests
         run: mix test
 
-      - name: Run doctests
-        run: mix test --doctest
-
   static_analysis:
     name: Static Analysis
     runs-on: ubuntu-latest
