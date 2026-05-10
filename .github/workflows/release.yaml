@@ -30,7 +30,6 @@ jobs:
         with:
           elixir-version: latest
           otp-version: latest
-          cache-key: v1
 
       - name: Install dependencies
         run: mix deps.get
@@ -113,7 +112,6 @@ jobs:
         with:
           elixir-version: latest
           otp-version: latest
-          cache-key: v1
 
       - name: Install dependencies
         if: steps.should_publish.outputs.publish == 'true'
