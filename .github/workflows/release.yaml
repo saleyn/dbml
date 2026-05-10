@@ -1,4 +1,5 @@
 name: Release
+run-name: Release ${{ github.ref_name }}
 
 on:
   push:
@@ -28,8 +29,12 @@ jobs:
       - name: Setup Elixir
         uses: erlef/setup-elixir@v1
         with:
-          elixir-version: latest
-          otp-version: latest
+          # Latest that excludes pre-releases
+          otp-version: "> 0"
+          elixir-version: "> 0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
       - name: Install dependencies
         uses: nick-invision/retry@v3
@@ -123,8 +128,12 @@ jobs:
         if: steps.should_publish.outputs.publish == 'true'
         uses: erlef/setup-elixir@v1
         with:
-          elixir-version: latest
-          otp-version: latest
+          # Latest that excludes pre-releases
+          otp-version: "> 0"
+          elixir-version: "> 0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
 
       - name: Install dependencies
         if: steps.should_publish.outputs.publish == 'true'
