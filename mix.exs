@@ -13,7 +13,8 @@ defmodule DBML.MixProject do
         # The main page in the docs
         main: "readme",
         extras: ["README.md"]
-      ]
+      ],
+      escript: [main_module: DBML.CLI, name: "dbml"]
     ]
   end
 
