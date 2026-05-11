@@ -5,24 +5,28 @@ defmodule DBML.Ecto.MigrationGenerator do
     File.mkdir_p!(output_dir)
     base_timestamp = Keyword.get(opts, :base_timestamp, 20_000_101_000_000)
     update = Keyword.get(opts, :update, false)
+    overwrite = Keyword.get(opts, :overwrite, false)
 
     alias_map = build_alias_map(tokens)
     refs = collect_refs(tokens, alias_map)
     tables = Keyword.get_values(tokens, :table)
     ordered_tables = order_tables_by_deps(tables, alias_map, refs)
 
-    # Pre-flight check: ensure no files exist when update is false
-    with :ok <- check_file_exists(ordered_tables, output_dir, base_timestamp, update) do
-      if update do
-        generate_with_update(ordered_tables, output_dir, repo_module, refs, base_timestamp)
-      else
-        generate_all(ordered_tables, output_dir, repo_module, refs, base_timestamp)
+    # Pre-flight check: ensure no files exist when update is false and overwrite is false
+    with :ok <- check_file_exists(ordered_tables, output_dir, base_timestamp, update, overwrite) do
+      cond do
+        overwrite ->
+          generate_all(ordered_tables, output_dir, repo_module, refs, base_timestamp)
+        update ->
+          generate_with_update(ordered_tables, output_dir, repo_module, refs, base_timestamp)
+        true ->
+          generate_all(ordered_tables, output_dir, repo_module, refs, base_timestamp)
       end
     end
   end
 
-  defp check_file_exists(ordered_tables, output_dir, base_timestamp, update) do
-    if update do
+  defp check_file_exists(ordered_tables, output_dir, base_timestamp, update, overwrite) do
+    if update || overwrite do
       :ok
     else
       migration_files =
@@ -266,6 +270,9 @@ defmodule DBML.Ecto.MigrationGenerator do
     index_lines = generate_index_lines(table_snake, indexes)
     fk_index_lines = generate_fk_indexes(table_snake, columns, table_name, refs)
 
+    # Deduplicate index lines
+    all_index_lines = (fk_index_lines ++ index_lines) |> Enum.uniq()
+
     create_table_opts = if primary_key_opt, do: ", #{primary_key_opt}", else: ""
 
     lines =
@@ -278,8 +285,7 @@ defmodule DBML.Ecto.MigrationGenerator do
       (if has_timestamps, do: ["", "      timestamps()"], else: []) ++
       ["    end",
        ""] ++
-      fk_index_lines ++
-      index_lines ++
+      all_index_lines ++
       ["  end",
        "end",
        ""]

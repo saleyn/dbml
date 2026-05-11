@@ -12,11 +12,38 @@ defmodule DBML do
         {:ok, tokens}
 
       {:ok, _, str, _, loc, pos} ->
-        {:error, %{input: str, location: loc, position: pos}}
+        clause_end_pos = compute_error_clause_end(doc, pos)
+        clause_end_loc = byte_offset_to_line_col(doc, clause_end_pos)
+
+        {:error,
+         %{
+           input: str,
+           location: loc,
+           position: pos,
+           clause_end_position: clause_end_pos,
+           clause_end_location: clause_end_loc
+         }}
 
       other ->
         {:error, other}
     end
+  end
+
+  defp compute_error_clause_end(doc, start_pos) do
+    regex = ~r/^[ \t]*(?:table|ref|enum|project|TableGroup)\b/m
+
+    case Regex.run(regex, doc, return: :index, offset: start_pos + 1) do
+      [{idx, _length}] -> idx
+      nil -> byte_size(doc)
+    end
+  end
+
+  defp byte_offset_to_line_col(doc, pos) do
+    prefix = :erlang.binary_part(doc, 0, pos)
+    lines = :binary.split(prefix, "\n", [:global])
+    line = length(lines)
+    col = byte_size(List.last(lines)) + 1
+    {line, col}
   end
 
   @doc """
@@ -74,8 +101,9 @@ defmodule DBML do
       Each table gets `base + index`.
     * `:update` - if `false` (default), returns an error if any migration file already exists.
       If `true`, compares schema with existing migrations and creates new ones for changed tables.
+    * `:overwrite` - if `true`, overwrites existing migration files without checking (default: false).
 
-  Returns `{:ok, paths}` on success, or `{:error, message}` if a file already exists (when update: false).
+  Returns `{:ok, paths}` on success, or `{:error, message}` if a file already exists (when both update and overwrite are false).
   """
   def generate_ecto_migrations(tokens, output_dir, repo_module, opts \\ []) do
     DBML.Ecto.MigrationGenerator.generate(tokens, output_dir, repo_module, opts)
