@@ -185,14 +185,37 @@ jobs:
 
           mix hex.info $APP
 
-          VSNS=$(mix hex.info $APP | sed -n '/^Releases:/,/^$/ { s/^Releases: //; s/^ *//; p }' | tr '\n' ', ' | sed 's/, $//')
-          echo "Versions found on Hex: $VSNS"
-          VSN=$(echo "$VSNS" | sed 's/, /\n/g' | sed '/retired/d; /\.\.\./d' | sed -n '$p')
-          if [ -z "$VSN" ]; then
-            echo "$APP: no stale versions were found on Hex"
-          else
+          INFO=$(mix hex.info $APP)
+          VSNS=$(printf '%s\n' "$INFO" | awk '
+            /^Releases:/ { sub(/^Releases:[[:space:]]*/, ""); print; exit }
+            /^Recent releases:/ { recent=1; next }
+            recent && /^[[:space:]]*[0-9]/ { sub(/^[[:space:]]*/, ""); print; next }
+            recent && !/^[[:space:]]/ { exit }
+          ')
+
+          if [ -z "$VSNS" ]; then
+            echo "$APP: no releases were found on Hex"
+            exit 0
+          fi
+
+          RELEASES=$(printf '%s\n' "$VSNS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$')
+          echo "Raw release lines:"
+          printf '%s\n' "$RELEASES"
+
+          KEEP=$(printf '%s\n' "$RELEASES" | awk 'NR==1 {print $1}')
+          TO_RETIRE=$(printf '%s\n' "$RELEASES" | tail -n +2 | grep -v '(retired)' | awk '{print $1}')
+
+          if [ -z "$TO_RETIRE" ]; then
+            echo "$APP: no prior versions need to be retired"
+            exit 0
+          fi
+
+          echo "Keeping latest version: $KEEP"
+          echo "Versions to retire: $TO_RETIRE"
+
+          for VSN in $TO_RETIRE; do
             echo "Retiring version $VSN of $APP on Hex..."
             mix hex.retire $APP $VSN deprecated --message "Deprecated" --yes
-          fi
+          done
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
