@@ -25,9 +25,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' && format('refs/tags/{0}', github.event.inputs.tag) || github.ref }}
 
       - name: Setup Elixir
-        uses: erlef/setup-elixir@v1
+        uses: erlef/setup-beam@v1
         with:
           # Latest that excludes pre-releases
           otp-version: "> 0"
@@ -47,9 +48,17 @@ jobs:
       - name: Build escript
         run: mix escript.build
 
-      - name: Get version from tag
+      - name: Get release version
         id: version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(sed -nE 's/.*version:\s*"([^"]+)".*/\1/p' mix.exs | head -1)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
       - name: Get changelog entry
         id: changelog
@@ -94,7 +103,15 @@ jobs:
 
       - name: Get current tag version
         id: current_version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(sed -nE 's/.*version:\s*"([^"]+)".*/\1/p' mix.exs | head -1)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
       - name: Check if tag is greater than max remote tag
         id: should_publish
@@ -126,7 +143,7 @@ jobs:
 
       - name: Setup Elixir
         if: steps.should_publish.outputs.publish == 'true'
-        uses: erlef/setup-elixir@v1
+        uses: erlef/setup-beam@v1
         with:
           # Latest that excludes pre-releases
           otp-version: "> 0"
