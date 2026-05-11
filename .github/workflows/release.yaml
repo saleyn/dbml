@@ -211,11 +211,11 @@ jobs:
           fi
 
           echo "Keeping latest version: $KEEP"
-          echo "Versions to retire: $TO_RETIRE"
+          echo -n "Versions to retire:\n$TO_RETIRE\n"
 
           for VSN in $TO_RETIRE; do
             echo "Retiring version $VSN of $APP on Hex..."
-            mix hex.retire $APP $VSN deprecated --message "Deprecated" --yes
+            mix hex.retire $APP $VSN deprecated --message "Deprecated"
           done
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
