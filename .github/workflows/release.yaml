@@ -185,7 +185,7 @@ jobs:
 
           mix hex.info $APP
 
-          VSNS=$(mix hex.info $APP | awk '/^Releases:/{gsub("Releases: ", ""); print; quit}')
+          VSNS=$(mix hex.info $APP | sed -n '/^Releases:/,/^$/ { s/^Releases: //; s/^ *//; p }' | tr '\n' ', ' | sed 's/, $//')
           echo "Versions found on Hex: $VSNS"
           VSN=$(echo "$VSNS" | sed 's/, /\n/g' | sed '/retired/d; /\.\.\./d' | sed -n '$p')
           if [ -z "$VSN" ]; then
