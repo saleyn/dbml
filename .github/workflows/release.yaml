@@ -182,7 +182,9 @@ jobs:
         run: |
           set +e
           APP=$(sed -nE '/app:/{s/.*app:\s*:([a-z_]+).*/\1/p; q}' mix.exs)
-          VSN=$(mix hex.info $APP | grep "^Releases:" | sed 's/Releases: //; s/, /\n/g' | sed '/retired/d; /\.\.\./d' | sed -n '$p')
+          VSNS=$(mix hex.info $APP | awk '/^Releases:/{gsub("Releases: ", ""); print; quit}')
+          echo "Versions found on Hex: $VSNS"
+          VSN=$(echo "$VSNS" | sed 's/, /\n/g' | sed '/retired/d; /\.\.\./d' | sed -n '$p')
           if [ -z "$VSN" ]; then
             echo "$APP: no stale versions were found on Hex"
           else
