@@ -182,7 +182,7 @@ jobs:
         run: |
           set +e
           APP=$(sed -nE '/app:/{s/.*app:\s*:([a-z_]+).*/\1/p; q}' mix.exs)
-          VSNS=$(mix hex.info $APP | awk '/^Releases:/{gsub("Releases: ", ""); print; quit}')
+          VSNS=$(mix hex.info $APP | awk 'BEGIN{flag=0} /^Releases:/{flag=1; sub(/^Releases: /, ""); buf=$0; next} flag && /^ /{sub(/^ */, ""); buf=buf ", " $0; next} flag && /^[^ ]/{exit} END{print buf}')
           echo "Versions found on Hex: $VSNS"
           VSN=$(echo "$VSNS" | sed 's/, /\n/g' | sed '/retired/d; /\.\.\./d' | sed -n '$p')
           if [ -z "$VSN" ]; then

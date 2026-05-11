@@ -163,14 +163,10 @@ jobs:
             fi
           fi
 
-      - name: Create and push tag
-        if: steps.should_create_tag.outputs.create_tag == 'true'
+      - name: Check release versions
         run: |
-          VERSION="${{ steps.project_version.outputs.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$VERSION"
-          git push https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/${{ github.repository }}.git "$VERSION"
+          VSNS=$(mix hex.info dbml | awk 'BEGIN{flag=0} /^Releases:/{flag=1; sub(/^Releases: /, ""); buf=$0; next} flag && /^ /{sub(/^ */, ""); buf=buf ", " $0; next} flag && /^[^ ]/{exit} END{print buf}')
+          echo "Versions found on Hex: $VSNS"
 
       - name: Trigger release workflow
         if: steps.should_create_tag.outputs.create_tag == 'true'
