@@ -134,8 +134,7 @@ defmodule DBML.Parser do
   )
 
   note_definition =
-    lookahead(string("Note"))
-    |> ignore(string("Note"))
+    find_and_ignore_keyword("note")
     |> repeat(misc)
     |> choice([
       lookahead(string("{"))
@@ -414,6 +413,7 @@ defmodule DBML.Parser do
       |> tag(identifier, :name)
     )
     |> choice([ref_short_form, ref_long_form])
+    |> parsec(:optional_settings)
     |> reduce({:maps, :from_list, []})
 
   parser =

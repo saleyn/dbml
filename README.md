@@ -98,8 +98,14 @@ mix escript.build
 # Generate Ecto schemas from DBML
 ./dbml schemas schema.dbml -o lib/my_app/schema --namespace MyApp.Schema
 
+# Generate Ecto schemas, overwriting existing files
+./dbml schemas schema.dbml -o lib/my_app/schema --overwrite
+
 # Generate Ecto migrations from DBML
 ./dbml migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo
+
+# Generate Ecto migrations, overwriting existing files
+./dbml migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --overwrite
 
 # Generate DBML from existing Ecto schemas
 ./dbml file lib/my_app/schema -o schema.dbml --project-name MyApp
@@ -119,8 +125,14 @@ The same functionality is available as Mix tasks for use during development:
 # Generate Ecto schemas from DBML
 mix dbml.schemas schema.dbml -o lib/my_app/schema --namespace MyApp.Schema
 
+# Generate Ecto schemas, overwriting existing files
+mix dbml.schemas schema.dbml -o lib/my_app/schema --overwrite
+
 # Generate Ecto migrations from DBML
 mix dbml.migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo
+
+# Generate Ecto migrations, overwriting existing files
+mix dbml.migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --overwrite
 
 # Generate DBML from existing Ecto schemas
 mix dbml.file lib/my_app/schema -o schema.dbml --project-name MyApp
@@ -142,6 +154,7 @@ Generate Ecto schema files from a DBML schema.
 -n, --namespace MODULE       Module namespace prefix (optional)
 --singularize true|false     Singularize table names (default: true)
 --update true|false          Allow overwriting existing files (default: false)
+--overwrite true|false       Allow overwriting existing files (default: false)
 ```
 
 #### `dbml migrations <DBML_FILE> [OPTIONS]`
@@ -153,6 +166,7 @@ Generate Ecto migration files from a DBML schema.
 -r, --repo MODULE            Repo module name (required)
 --base-timestamp TIMESTAMP   Base timestamp for migrations (default: 20000101000000)
 --update true|false          Allow incremental updates (default: false)
+--overwrite true|false       Allow overwriting existing files (default: false)
 ```
 
 #### `dbml file <SCHEMAS_DIR> [OPTIONS]`
@@ -818,6 +832,7 @@ Generate Ecto schema files from parsed DBML tokens.
 - `:namespace` (string) — Module namespace prefix
 - `:singularize` (boolean, default: `true`) — Singularize table names
 - `:update` (boolean, default: `false`) — Allow overwriting existing files
+- `:overwrite` (boolean, default: `false`) — Allow overwriting existing files (same as `:update`)
 
 **Returns:**
 - `{:ok, [paths]}` — List of written file paths
@@ -846,6 +861,7 @@ Generate Ecto migration files from parsed DBML tokens.
 **Options:**
 - `:base_timestamp` (integer, default: `20000101000000`) — Migration timestamp base
 - `:update` (boolean, default: `false`) — Incremental generation
+- `:overwrite` (boolean, default: `false`) — Allow overwriting existing files
 
 **Returns:**
 - `{:ok, [paths]}` — List of written migration file paths
@@ -998,7 +1014,9 @@ mix ecto.migrate
 
 # 2. Regenerate using the escript (or mix tasks)
 ./dbml schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+./dbml schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp --overwrite
 ./dbml migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+./dbml migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo --overwrite
 
 # 3. Review and run new migrations
 mix ecto.migrate
@@ -1007,7 +1025,9 @@ mix ecto.migrate
 Using Mix tasks:
 ```bash
 mix dbml.schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+mix dbml.schemas priv/schema.dbml -o lib/my_app/schema --namespace MyApp --overwrite
 mix dbml.migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+mix dbml.migrations priv/schema.dbml -o priv/repo/migrations -r MyApp.Repo --overwrite
 mix ecto.migrate
 ```
 
@@ -1022,6 +1042,13 @@ DBML.generate_ecto_schemas(
   "lib/my_app/schema",
   namespace: "MyApp",
   update: true  # overwrite changed, skip unchanged
+)
+
+DBML.generate_ecto_schemas(
+  tokens,
+  "lib/my_app/schema",
+  namespace: "MyApp",
+  overwrite: true  # overwrite all files
 )
 
 DBML.generate_ecto_migrations(
@@ -1071,7 +1098,9 @@ mix dbml.file lib/my_app/schema -o priv/schema.dbml --project-name MyApp
 
 # 3. Generate schemas and migrations from DBML
 ./dbml schemas schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+./dbml schemas schema.dbml -o lib/my_app/schema --namespace MyApp --overwrite
 ./dbml migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+./dbml migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --overwrite
 
 # 4. Run migrations
 mix ecto.migrate
@@ -1082,7 +1111,9 @@ Or using Mix tasks:
 mix dbml.file lib/my_app/schema -o schema.dbml --project-name MyApp
 # Edit schema.dbml...
 mix dbml.schemas schema.dbml -o lib/my_app/schema --namespace MyApp --update true
+mix dbml.schemas schema.dbml -o lib/my_app/schema --namespace MyApp --overwrite
 mix dbml.migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --update true
+mix dbml.migrations schema.dbml -o priv/repo/migrations -r MyApp.Repo --overwrite
 mix ecto.migrate
 ```
 
@@ -1110,14 +1141,15 @@ mix ecto.migrate
 
 ### "File already exists" error
 
-When regenerating schemas or migrations, use `update: true` to allow overwrites:
+When regenerating schemas or migrations, use `update: true` or `overwrite: true` to allow overwrites:
 
 ```elixir
 # ❌ This fails if files exist
 DBML.generate_ecto_schemas(tokens, "lib/my_app/schema")
 
-# ✅ This overwrites changed files
+# ✅ This overwrites existing files
 DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", update: true)
+DBML.generate_ecto_schemas(tokens, "lib/my_app/schema", overwrite: true)
 ```
 
 ### Migration ordering with foreign keys
