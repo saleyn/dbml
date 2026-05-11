@@ -163,11 +163,6 @@ jobs:
             fi
           fi
 
-      - name: Check release versions
-        run: |
-          VSNS=$(mix hex.info dbml | awk 'BEGIN{flag=0} /^Releases:/{flag=1; sub(/^Releases: /, ""); buf=$0; next} flag && /^ /{sub(/^ */, ""); buf=buf ", " $0; next} flag && /^[^ ]/{exit} END{print buf}')
-          echo "Versions found on Hex: $VSNS"
-
       - name: Trigger release workflow
         if: steps.should_create_tag.outputs.create_tag == 'true'
         uses: actions/github-script@v7
