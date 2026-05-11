@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [master, main]
 
+env:
+  ELIXIR_VERSIONS: '["1.18", "1.19"]'
+  OTP_VERSIONS:    '["27", "28"]'
+
 jobs:
   test:
     name: Test (OTP ${{ matrix.otp }}, Elixir ${{ matrix.elixir }})
@@ -13,8 +17,8 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ["1.18", "1.19"]
-        otp:    ["27", "28"]
+        elixir: ${{ fromJson(env.ELIXIR_VERSIONS) }}
+        otp:    ${{ fromJson(env.OTP_VERSIONS) }}
 
     steps:
       - uses: actions/checkout@v4
@@ -65,16 +69,14 @@ jobs:
         id: latest
         run: |
           # Extract last element of each matrix array
-          echo "elixir_latest=${{ matrix.elixir[1] }}" >> $GITHUB_OUTPUT
-          echo "otp_latest=${{ matrix.otp[1] }}" >> $GITHUB_OUTPUT
+          elixir_last=$(echo '${{ env.ELIXIR_VERSIONS }}' | jq -r 'last')
+          otp_last=$(echo '${{ env.OTP_VERSIONS }}' | jq -r 'last')
+
+          echo "elixir_latest=$elixir_last" >> $GITHUB_OUTPUT
+          echo "otp_latest=$otp_last" >> $GITHUB_OUTPUT
 
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Elixir and OTP versions
-        run: |
-          echo "Elixir: ${{ steps.latest.outputs.elixir_latest }}"
-          echo "OTP: ${{ steps.latest.outputs.otp_latest }}"
 
       - name: Setup Elixir
         uses: erlef/setup-elixir@v1
@@ -107,16 +109,14 @@ jobs:
         id: latest
         run: |
           # Extract last element of each matrix array
-          echo "elixir_latest=${{ matrix.elixir[1] }}" >> $GITHUB_OUTPUT
-          echo "otp_latest=${{ matrix.otp[1] }}" >> $GITHUB_OUTPUT
+          elixir_last=$(echo '${{ env.ELIXIR_VERSIONS }}' | jq -r 'last')
+          otp_last=$(echo '${{ env.OTP_VERSIONS }}' | jq -r 'last')
+
+          echo "elixir_latest=$elixir_last" >> $GITHUB_OUTPUT
+          echo "otp_latest=$otp_last" >> $GITHUB_OUTPUT
 
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Elixir and OTP versions
-        run: |
-          echo "Elixir: ${{ steps.latest.outputs.elixir_latest }}"
-          echo "OTP: ${{ steps.latest.outputs.otp_latest }}"
 
       - name: Setup Elixir
         uses: erlef/setup-elixir@v1
