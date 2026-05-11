@@ -7,8 +7,8 @@ on:
     branches: [master, main]
 
 env:
-  ELIXIR_VERSIONS: '["1.18", "1.19"]'
-  OTP_VERSIONS:    '["27", "28"]'
+  ELIXIR_LATEST: "1.19"
+  OTP_LATEST: "28"
 
 jobs:
   test:
@@ -17,8 +17,8 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ${{ fromJson(env.ELIXIR_VERSIONS) }}
-        otp:    ${{ fromJson(env.OTP_VERSIONS) }}
+        elixir: ["1.18", "1.19"]
+        otp:    ["27", "28"]
 
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           elixir-version: ${{ matrix.elixir }}
-          otp-version: ${{ matrix.otp }}
+          otp-version:    ${{ matrix.otp }}
           hexpm-mirrors: |
             https://builds.hex.pm
             https://cdn.jsdelivr.net/hex
@@ -65,25 +65,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Determine latest versions from matrix
-        id: latest
-        run: |
-          # Extract last element of each matrix array
-          elixir_last=$(echo '${{ env.ELIXIR_VERSIONS }}' | jq -r 'last')
-          otp_last=$(echo '${{ env.OTP_VERSIONS }}' | jq -r 'last')
-
-          echo "elixir_latest=$elixir_last" >> $GITHUB_OUTPUT
-          echo "otp_latest=$otp_last" >> $GITHUB_OUTPUT
-
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Elixir
-        uses: erlef/setup-elixir@v1
+        uses: erlef/setup-beam@v1
         with:
-          elixir-version: "${{ steps.latest.outputs.elixir_latest }}"
-          otp-version: "${{ steps.latest.outputs.otp_latest }}"
-          #cache-key: v1
+          elixir-version: "${{ env.ELIXIR_LATEST }}"
+          otp-version: "${{ env.OTP_LATEST }}"
 
       - name: Update Hex
         run: mix local.hex --force
@@ -105,25 +94,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Determine latest versions from matrix
-        id: latest
-        run: |
-          # Extract last element of each matrix array
-          elixir_last=$(echo '${{ env.ELIXIR_VERSIONS }}' | jq -r 'last')
-          otp_last=$(echo '${{ env.OTP_VERSIONS }}' | jq -r 'last')
-
-          echo "elixir_latest=$elixir_last" >> $GITHUB_OUTPUT
-          echo "otp_latest=$otp_last" >> $GITHUB_OUTPUT
-
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Elixir
-        uses: erlef/setup-elixir@v1
+        uses: erlef/setup-beam@v1
         with:
-          elixir-version: "${{ steps.latest.outputs.elixir_latest }}"
-          otp-version: "${{ steps.latest.outputs.otp_latest }}"
-          #cache-key: v1
+          elixir-version: "${{ env.ELIXIR_LATEST }}"
+          otp-version: "${{ env.OTP_LATEST }}"
 
       - name: Update Hex
         uses: nick-invision/retry@v3
@@ -151,7 +129,7 @@ jobs:
     name: Create Tag if Version Changed
     runs-on: ubuntu-latest
     needs: [test, static_analysis, docs]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
 
     steps:
       - name: Checkout code
