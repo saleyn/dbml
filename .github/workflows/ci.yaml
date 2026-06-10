@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [main]
   pull_request:
-    branches: [master, main]
+    branches: [main]
 
 env:
   ELIXIR_LATEST: "1.19"
@@ -17,8 +17,8 @@ jobs:
 
     strategy:
       matrix:
-        elixir: ["1.18", "1.19"]
-        otp:    ["27", "28"]
+        elixir: ["1.19", "1.20"]
+        otp:    ["27", "28", "29"]
 
     steps:
       - uses: actions/checkout@v4
